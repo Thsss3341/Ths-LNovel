@@ -1,5 +1,5 @@
 import { CheerioAPI, load as parseHTML } from 'cheerio';
-import { fetchText } from '@libs/fetch';
+import { fetchApi } from '@libs/fetch';
 import { FilterTypes, Filters } from '@libs/filterInputs';
 import { Plugin } from '@/types/plugin';
 import { NovelStatus } from '@libs/novelStatus';
@@ -7,10 +7,13 @@ import { encode } from 'urlencode';
 
 // wenku8 serves GBK-encoded pages from behind Cloudflare, and its ranking and
 // search pages require a logged-in account. Requests reuse the cookies of the
-// in-app WebView, so users pass the challenge and log in there once.
-const ACCESS_HINT =
-  '无法访问轻小说文库：请在 WebView 中打开网站，通过 Cloudflare 验证并登录后重试。' +
-  '若网页提示 Error 1015（请求过快被限速），请等待几分钟后再试。';
+// in-app WebView, so users pass the challenge and log in there.
+const CHALLENGE_HINT =
+  'Cloudflare 验证已过期：请在 WebView 中打开轻小说文库（通常会自动通过验证），返回后重试。';
+const LOGIN_HINT = '需要登录：请在 WebView 中登录轻小说文库后重试。';
+const ACCESS_HINT = '无法读取该页面：请在 WebView 中打开轻小说文库检查。';
+// Used when a 429 carries no Retry-After header.
+const DEFAULT_BAN_SECONDS = 60;
 
 // Cloudflare bans an IP for a while (error 1015) once pages load too fast:
 // gaps of 1-2 s trip it after 5-6 requests, while 3 s gaps stay safe
@@ -24,7 +27,7 @@ class Wenku8Plugin implements Plugin.PluginBase {
   name = '轻小说文库';
   icon = 'src/cn/wenku8/icon.png';
   site = 'https://www.wenku8.net';
-  version = '1.1.0';
+  version = '1.1.1';
 
   imageRequestInit: Plugin.ImageRequestInit = {
     headers: { Referer: 'https://www.wenku8.net/' },
@@ -55,23 +58,69 @@ class Wenku8Plugin implements Plugin.PluginBase {
     return turn;
   }
 
+  /** Set after a 429 (Cloudflare error 1015); no requests go out until then. */
+  private bannedUntil = 0;
+
+  private checkBan() {
+    const seconds = Math.ceil((this.bannedUntil - Date.now()) / 1000);
+    if (seconds > 0) {
+      throw new Error(
+        `请求过快，已被轻小说文库暂时限速（Error 1015），请约 ${seconds} 秒后再试。`,
+      );
+    }
+  }
+
   private async fetchPage(url: string): Promise<CheerioAPI> {
+    this.checkBan();
     await this.throttle();
-    const body = await fetchText(
-      url,
-      { headers: { Referer: this.site + '/' } },
-      'gbk',
-    );
-    if (!body || body.includes('本站正式关闭')) throw new Error(ACCESS_HINT);
+    this.checkBan();
+    const res = await fetchApi(url, { headers: { Referer: this.site + '/' } });
+    if (res.status === 429) {
+      const retryAfter = parseInt(res.headers.get('retry-after') || '', 10);
+      this.bannedUntil =
+        Date.now() + (retryAfter > 0 ? retryAfter : DEFAULT_BAN_SECONDS) * 1000;
+      this.checkBan();
+    }
+    if (res.headers.get('cf-mitigated') === 'challenge') {
+      throw new Error(CHALLENGE_HINT);
+    }
+    if (!res.ok) {
+      throw new Error(
+        `无法访问轻小说文库（HTTP ${res.status}）。` + ACCESS_HINT,
+      );
+    }
+    const body = await this.decodeGbk(res);
+    // Shown instead of search results when the session is not logged in.
+    if (body.includes('本站正式关闭')) throw new Error(LOGIN_HINT);
     if (body.includes('两次搜索的间隔时间')) {
       throw new Error('轻小说文库限制两次搜索间隔不少于 5 秒，请稍后再试。');
     }
     // Jieqi CMS error page: "出现错误！ 错误原因：..."
     const error = body.match(/错误原因：([^<]*)/)?.[1]?.trim();
     if (error) {
-      throw new Error(error.includes('登录') ? ACCESS_HINT : error);
+      throw new Error(error.includes('登录') ? LOGIN_HINT : error);
     }
     return parseHTML(body);
+  }
+
+  /** Decodes a GBK page the way the app's fetchText does. */
+  private decodeGbk(res: Awaited<ReturnType<typeof fetchApi>>) {
+    if (typeof FileReader === 'undefined') {
+      // Node (the live checker) has no FileReader but decodes GBK natively.
+      const { TextDecoder } = globalThis as unknown as {
+        TextDecoder: new (label: string) => { decode(b: ArrayBuffer): string };
+      };
+      return res.arrayBuffer().then(b => new TextDecoder('gbk').decode(b));
+    }
+    return res.blob().then(
+      blob =>
+        new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = () => reject(reader.error);
+          reader.readAsText(blob, 'gbk');
+        }),
+    );
   }
 
   private coverUrl(aid: string) {

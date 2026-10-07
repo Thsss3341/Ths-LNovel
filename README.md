@@ -14,12 +14,15 @@ repository.
 
 - wenku8.net is behind Cloudflare, and its ranking and search pages need a logged-in account.
   In LNReader, open the source's WebView (the globe icon), pass the Cloudflare check, and log in
-  to wenku8 there. The plugin reuses the WebView's cookies. If you see
-  `无法访问轻小说文库…`, repeat this step.
+  to wenku8 there. The plugin reuses the WebView's cookies.
+- The Cloudflare clearance expires after a while. When it does, the plugin shows
+  `Cloudflare 验证已过期…`: open the WebView again (it usually passes the check by itself),
+  then go back. `需要登录…` means the wenku8 login has to be renewed in the WebView.
 - Loading pages too quickly gets your IP banned for a few minutes (Cloudflare "Error 1015 —
   You are being rate limited"). The plugin spaces its requests about 3 seconds apart, so
   downloading many chapters is slow (about 20 chapters a minute) but stays under the limit. If
-  you still see 1015, wait a few minutes; the ban lifts on its own.
+  a ban happens anyway, the plugin shows `请求过快…` with the remaining wait and sends nothing
+  until the ban has expired.
 - The site allows one search every 5 seconds.
 - Chapters are grouped by volume (卷). Illustrations are loaded from `pic.wenku8.com`.
 - The site has withdrawn some novels for copyright reasons (因版权问题). Those novels show their
