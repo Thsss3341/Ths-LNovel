@@ -24,7 +24,7 @@ class Wenku8Plugin implements Plugin.PluginBase {
   name = '轻小说文库';
   icon = 'src/cn/wenku8/icon.png';
   site = 'https://www.wenku8.net';
-  version = '1.0.1';
+  version = '1.1.0';
 
   imageRequestInit: Plugin.ImageRequestInit = {
     headers: { Referer: 'https://www.wenku8.net/' },
@@ -91,7 +91,7 @@ class Wenku8Plugin implements Plugin.PluginBase {
     return match[1];
   }
 
-  /** Parses the novel cards shared by toplist.php and search.php. */
+  /** Parses the novel cards shared by toplist.php, articlelist.php and search.php. */
   private parseNovelList($: CheerioAPI, pageNo: number): Plugin.NovelItem[] {
     const pageStats = $('#pagestats').text().split('/');
     const lastPage = parseInt(pageStats[1], 10);
@@ -134,9 +134,12 @@ class Wenku8Plugin implements Plugin.PluginBase {
       filters,
     }: Plugin.PopularNovelsOptions<typeof this.filters>,
   ): Promise<Plugin.NovelItem[]> {
-    const sort = showLatestNovels ? 'lastupdate' : filters.sort.value;
+    const list = showLatestNovels
+      ? 'toplist.php?sort=lastupdate'
+      : filters.list.value;
+    const separator = list.includes('?') ? '&' : '?';
     const $ = await this.fetchPage(
-      `${this.site}/modules/article/toplist.php?sort=${sort}&page=${pageNo}`,
+      `${this.site}/modules/article/${list}${separator}page=${pageNo}`,
     );
     return this.parseNovelList($, pageNo);
   }
@@ -316,24 +319,27 @@ class Wenku8Plugin implements Plugin.PluginBase {
   resolveUrl = (path: string) => this.site + path;
 
   filters = {
-    sort: {
-      label: '排行榜',
-      value: 'allvisit',
+    list: {
+      label: '分类',
+      value: 'toplist.php?sort=allvisit',
       options: [
-        { label: '总排行榜', value: 'allvisit' },
-        { label: '总推荐榜', value: 'allvote' },
-        { label: '月排行榜', value: 'monthvisit' },
-        { label: '月推荐榜', value: 'monthvote' },
-        { label: '周排行榜', value: 'weekvisit' },
-        { label: '周推荐榜', value: 'weekvote' },
-        { label: '日排行榜', value: 'dayvisit' },
-        { label: '日推荐榜', value: 'dayvote' },
-        { label: '总收藏榜', value: 'goodnum' },
-        { label: '字数排行', value: 'size' },
-        { label: '最新入库', value: 'postdate' },
-        { label: '最近更新', value: 'lastupdate' },
-        { label: '完结小说', value: 'fullflag' },
-        { label: '动画化作品', value: 'anime' },
+        // The site's navigation tabs, with the same URLs.
+        { label: '热门轻小说', value: 'toplist.php?sort=allvisit' },
+        { label: '动画化作品', value: 'toplist.php?sort=anime' },
+        { label: '今日更新', value: 'toplist.php?sort=lastupdate' },
+        { label: '新书一览', value: 'toplist.php?sort=postdate' },
+        { label: '完结全本', value: 'articlelist.php?fullflag=1' },
+        { label: '轻小说列表', value: 'articlelist.php' },
+        // Other toplist.php rankings.
+        { label: '总推荐榜', value: 'toplist.php?sort=allvote' },
+        { label: '月排行榜', value: 'toplist.php?sort=monthvisit' },
+        { label: '月推荐榜', value: 'toplist.php?sort=monthvote' },
+        { label: '周排行榜', value: 'toplist.php?sort=weekvisit' },
+        { label: '周推荐榜', value: 'toplist.php?sort=weekvote' },
+        { label: '日排行榜', value: 'toplist.php?sort=dayvisit' },
+        { label: '日推荐榜', value: 'toplist.php?sort=dayvote' },
+        { label: '总收藏榜', value: 'toplist.php?sort=goodnum' },
+        { label: '字数排行', value: 'toplist.php?sort=size' },
       ],
       type: FilterTypes.Picker,
     },
