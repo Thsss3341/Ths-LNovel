@@ -1,6 +1,7 @@
 # Ths-LNovel
 
-A personal plugin repository for [LNReader](https://github.com/LNReader/lnreader), built on the
+A personal plugin repository for [LNReader](https://github.com/LNReader/lnreader) and
+[Nekori](https://github.com/Yuneko-dev/Nekori), which runs LNReader plugins, built on the
 tooling of the community [lnreader-plugins](https://github.com/LNReader/lnreader-plugins)
 repository.
 
@@ -13,7 +14,7 @@ repository.
 ### wenku8 notes
 
 - wenku8.net is behind Cloudflare, and its ranking and search pages need a logged-in account.
-  In LNReader, open the source's WebView (the globe icon), pass the Cloudflare check, and log in
+  In the app, open the source's WebView (the globe icon), pass the Cloudflare check, and log in
   to wenku8 there. The plugin reuses the WebView's cookies.
 - The Cloudflare clearance expires after a while. When it does, the plugin shows
   `Cloudflare 验证已过期…`: open the WebView again (it usually passes the check by itself),
@@ -25,17 +26,17 @@ repository.
   until the ban has expired.
 - The site allows one search every 5 seconds.
 - Chapters are grouped by volume (卷). Illustrations are loaded from `pic.wenku8.com`.
-- The site has withdrawn some novels for copyright reasons (因版权问题). Those novels show their
-  details with a note in the summary, but they have no chapters.
+- The site has withdrawn some novels for copyright reasons (因版权问题). They have no chapters.
+  Nekori opens them with a note in the summary; LNReader shows "Unable to load novel".
 
-## Using this repository in LNReader
+## Using this repository in LNReader or Nekori
 
 Every push to `main` that touches `plugins/`, `public/`, or `scripts/` runs the
 [Publish Plugins](.github/workflows/publish-plugins.yml) workflow. It builds the plugins and
 force-pushes them to the `plugins/v<version>` branch, where the version comes from
 `package.json` (currently `1.0.0`).
 
-In LNReader, add this URL as a plugin repository:
+In LNReader or Nekori, add this URL as a plugin repository:
 
 ```
 https://raw.githubusercontent.com/Thsss3341/Ths-LNovel/plugins/v1.0.0/.dist/plugins.min.json
