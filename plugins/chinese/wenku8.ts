@@ -27,7 +27,7 @@ class Wenku8Plugin implements Plugin.PluginBase {
   name = '轻小说文库';
   icon = 'src/cn/wenku8/icon.png';
   site = 'https://www.wenku8.net';
-  version = '1.1.2';
+  version = '1.1.3';
 
   imageRequestInit: Plugin.ImageRequestInit = {
     headers: { Referer: 'https://www.wenku8.net/' },
