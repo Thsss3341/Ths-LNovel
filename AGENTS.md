@@ -119,6 +119,9 @@ works because target-site markup and network defenses change independently of th
 
 ## Pull requests and change hygiene
 
+- Name branches and PRs after the change they carry, never with generated or session IDs. Use
+  `<type>/<short-description>` for branches (for example, `feat/wenku8-plugin`,
+  `fix/wenku8-chapter-images`) and a Conventional Commits-style PR title.
 - Keep unrelated files and existing user changes untouched.
 - Do not commit generated multi-source plugins, `.js/`, `.dist/`, `broken-sites-report.json`, or
   local environment files.
