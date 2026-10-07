@@ -9,20 +9,54 @@ import { encode } from 'urlencode';
 // search pages require a logged-in account. Requests reuse the cookies of the
 // in-app WebView, so users pass the challenge and log in there once.
 const ACCESS_HINT =
-  '无法访问轻小说文库：请在 WebView 中打开网站，通过 Cloudflare 验证并登录后重试。';
+  '无法访问轻小说文库：请在 WebView 中打开网站，通过 Cloudflare 验证并登录后重试。' +
+  '若网页提示 Error 1015（请求过快被限速），请等待几分钟后再试。';
+
+// Cloudflare bans an IP for a while (error 1015) once pages load too fast:
+// gaps of 1-2 s trip it after 5-6 requests, while 3 s gaps stay safe
+// (measured by pywenku8api). Page requests therefore share a token bucket
+// that allows a burst of 2 and then one request every 3 seconds.
+const REQUEST_INTERVAL_MS = 3000;
+const REQUEST_BURST = 2;
 
 class Wenku8Plugin implements Plugin.PluginBase {
   id = 'wenku8';
   name = '轻小说文库';
   icon = 'src/cn/wenku8/icon.png';
   site = 'https://www.wenku8.net';
-  version = '1.0.0';
+  version = '1.0.1';
 
   imageRequestInit: Plugin.ImageRequestInit = {
     headers: { Referer: 'https://www.wenku8.net/' },
   };
 
+  private tokens = REQUEST_BURST;
+  private lastRefill = Date.now();
+  private queue: Promise<void> = Promise.resolve();
+
+  /** Resolves when the next page request may be sent, in call order. */
+  private throttle(): Promise<void> {
+    const turn = this.queue.then(async () => {
+      const now = Date.now();
+      this.tokens = Math.min(
+        REQUEST_BURST,
+        this.tokens + (now - this.lastRefill) / REQUEST_INTERVAL_MS,
+      );
+      this.lastRefill = now;
+      if (this.tokens < 1) {
+        const wait = (1 - this.tokens) * REQUEST_INTERVAL_MS;
+        await new Promise(resolve => setTimeout(resolve, wait));
+        this.tokens = 1;
+        this.lastRefill = Date.now();
+      }
+      this.tokens -= 1;
+    });
+    this.queue = turn;
+    return turn;
+  }
+
   private async fetchPage(url: string): Promise<CheerioAPI> {
+    await this.throttle();
     const body = await fetchText(
       url,
       { headers: { Referer: this.site + '/' } },
