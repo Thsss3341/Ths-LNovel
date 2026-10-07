@@ -27,7 +27,7 @@ class Wenku8Plugin implements Plugin.PluginBase {
   name = '轻小说文库';
   icon = 'src/cn/wenku8/icon.png';
   site = 'https://www.wenku8.net';
-  version = '1.1.1';
+  version = '1.1.2';
 
   imageRequestInit: Plugin.ImageRequestInit = {
     headers: { Referer: 'https://www.wenku8.net/' },
@@ -199,6 +199,18 @@ class Wenku8Plugin implements Plugin.PluginBase {
     return this.parseNovelPage($, novelPath, aid, true);
   }
 
+  /**
+   * LNReader calls this only when it finds no stored chapters for a page,
+   * e.g. a novel withdrawn for copyright. Without it the app shows
+   * "Unable to load novel" instead of the novel's details.
+   */
+  async parsePage(novelPath: string, page: string): Promise<Plugin.SourcePage> {
+    const { chapters = [] } = await this.parseNovel(novelPath);
+    return {
+      chapters: chapters.filter(chapter => (chapter.page || '1') === page),
+    };
+  }
+
   private async parseNovelPage(
     $: CheerioAPI,
     novelPath: string,
@@ -296,6 +308,11 @@ class Wenku8Plugin implements Plugin.PluginBase {
         page: volume || undefined,
       });
     });
+    // LNReader only splits chapters into pages when a novel has two or more;
+    // otherwise it looks for page "1", so a lone volume name would hide them.
+    if (new Set(chapters.map(chapter => chapter.page)).size < 2) {
+      chapters.forEach(chapter => delete chapter.page);
+    }
     return chapters;
   }
 
