@@ -72,6 +72,12 @@ type MalTitle = {
 
 type Candidate = { name: string; shortened: boolean };
 
+type LikelySubject = {
+  subject: BangumiSubject;
+  sameAuthor: boolean;
+  score: number;
+};
+
 type BangumiSubject = {
   name: string;
   name_cn: string;
@@ -129,6 +135,49 @@ const similarity = (a: string, b: string) => {
     }
   });
   return (2 * shared) / (pairsA.length + pairsB.length);
+};
+
+/**
+ * 1 minus the edit distance relative to the longer title, 0..1: 败北女角太多了
+ * and 败犬女主太多了 differ in 2 of 7 characters, 0.71.
+ */
+const editSimilarity = (a: string, b: string) => {
+  if (!a || !b) return 0;
+  let previous: number[] = [];
+  for (let j = 0; j <= b.length; j++) previous.push(j);
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j++) {
+      current.push(
+        Math.min(
+          previous[j] + 1,
+          current[j - 1] + 1,
+          previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+        ),
+      );
+    }
+    previous = current;
+  }
+  return 1 - previous[b.length] / Math.max(a.length, b.length);
+};
+
+/** Thresholds for a likely match: with the same author, or on the title alone. */
+const LIKELY_WITH_AUTHOR = 0.3;
+const LIKELY_DICE = 0.75;
+const LIKELY_EDIT = 0.7;
+
+/** Parts of a title to search Bangumi with: its halves, then its first and last 3 characters. */
+const fragments = (title: string) => {
+  const text = loose(title);
+  if (text.length < 5) return [];
+  const half = Math.ceil(text.length / 2);
+  const parts = [
+    text.slice(-half),
+    text.slice(0, half),
+    text.slice(-3),
+    text.slice(0, 3),
+  ];
+  return parts.filter((part, index) => parts.indexOf(part) === index);
 };
 
 /** Runs tasks one at a time, at least [intervalMs] apart, to respect an API's rate limit. */
@@ -247,30 +296,28 @@ class MalLookup {
 
   /**
    * The Bangumi novel by the same author with a similar title, or with a very
-   * similar one, for titles translated differently. wenku8 gives no year, so
-   * the author has to carry the match.
+   * similar one, for titles translated differently (wenku8's 败北女角太多了 is
+   * 败犬女主太多了 on Bangumi). wenku8 gives no year, so the title or the author
+   * has to carry the match.
    */
   private async likelyViaBangumi(): Promise<MalTitle | undefined> {
-    let best:
-      | { subject: BangumiSubject; sameAuthor: boolean; score: number }
-      | undefined;
+    const titles = this.candidates.filter(
+      candidate => !candidate.shortened && isChinese(candidate.name),
+    );
+    let best: LikelySubject | undefined;
     for (const candidate of this.candidates) {
       if (!isChinese(candidate.name)) continue;
-      for (const subject of await this.bangumi(candidate.name)) {
-        const score = Math.max(
-          similarity(loose(candidate.name), loose(subject.name_cn)),
-          similarity(loose(candidate.name), loose(subject.name)),
-        );
-        const sameAuthor = this.sharesAuthor(subject);
-        if (!((sameAuthor && score >= 0.3) || score >= 0.75)) continue;
-        if (
-          !best ||
-          Number(sameAuthor) > Number(best.sameAuthor) ||
-          (sameAuthor === best.sameAuthor && score > best.score)
-        ) {
-          best = { subject, sameAuthor, score };
-        }
-      }
+      best = this.bestLikely(
+        best,
+        await this.bangumi(candidate.name),
+        titles.concat(candidate),
+      );
+    }
+    // Bangumi matches whole words, so a title with a word translated
+    // differently may not come up at all. Its parts usually do ("太多了").
+    for (const fragment of titles.length ? fragments(titles[0].name) : []) {
+      if (best) break;
+      best = this.bestLikely(best, await this.bangumi(fragment), titles);
     }
     if (!best) return undefined;
     const { subject } = best;
@@ -281,6 +328,43 @@ class MalLookup {
     return media
       ? this.toMalTitle(media, false)
       : { native: subject.name, exact: false };
+  }
+
+  /** [best], or the subject among [subjects] that resembles one of [titles] more. */
+  private bestLikely(
+    best: LikelySubject | undefined,
+    subjects: BangumiSubject[],
+    titles: Candidate[],
+  ) {
+    for (const subject of subjects) {
+      let dice = 0;
+      let edit = 0;
+      titles.forEach(title => {
+        [subject.name_cn, subject.name].forEach(name => {
+          dice = Math.max(dice, similarity(loose(title.name), loose(name)));
+          edit = Math.max(edit, editSimilarity(loose(title.name), loose(name)));
+        });
+      });
+      const score = Math.max(dice, edit);
+      const sameAuthor = this.sharesAuthor(subject);
+      if (
+        !(
+          (sameAuthor && score >= LIKELY_WITH_AUTHOR) ||
+          dice >= LIKELY_DICE ||
+          edit >= LIKELY_EDIT
+        )
+      ) {
+        continue;
+      }
+      if (
+        !best ||
+        Number(sameAuthor) > Number(best.sameAuthor) ||
+        (sameAuthor === best.sameAuthor && score > best.score)
+      ) {
+        best = { subject, sameAuthor, score };
+      }
+    }
+    return best;
   }
 
   private firstExactMatch(subjects: BangumiSubject[], name: string) {

@@ -49,12 +49,13 @@ search. That gives the exact entry.
 [AniList](https://anilist.co) with that for the MAL ID and the romaji and English titles.
 
 - **Exact match:** the titles are identical.
-- **Likely match:** the title is only similar (a different translation), but the author agrees,
-  or the title is very similar. It is marked **⚠ 非精确匹配，可能不准确**; check the entry before
-  tracking it.
-- **No match:** the description is unchanged. This happens when wenku8 uses a translation
-  Bangumi doesn't know (e.g. wenku8's 败北女角太多了 is 败犬女主太多了 on Bangumi), or when the
-  novel isn't on MAL.
+- **Likely match:** the title is only similar (a different translation), and either the author
+  agrees or the titles differ in only a few characters (at least 70% the same, e.g. wenku8's
+  败北女角太多了 and Bangumi's 败犬女主太多了). It is marked **⚠ 非精确匹配，可能不准确**; check the
+  entry before tracking it. When the whole title finds nothing, the plugin also searches Bangumi
+  with parts of it, since Bangumi matches whole words.
+- **No match:** the description is unchanged. This happens when wenku8's translation is too
+  different from Bangumi's, or when the novel isn't on MAL.
 - **Bangumi only:** if AniList has no MAL ID, the description shows `MAL：未找到` with the
   Japanese title, which you can still search MAL for.
 
