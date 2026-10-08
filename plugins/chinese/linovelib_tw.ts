@@ -14,8 +14,22 @@ const CHALLENGE_HINT =
 const TRUNCATED_MARK = '內容加載失敗';
 const TRUNCATED_HINT =
   '嗶哩輕小說只回傳了部分章節內容：請在 WebView 中打開網站首頁，返回後重試。';
-const SEARCH_HINT =
-  '嗶哩輕小說已關閉站內搜尋。請輸入小說網址或編號，例如 https://tw.linovelib.com/novel/3095.html 或 3095。';
+const INDEX_HINT =
+  '無法下載搜尋索引，請稍後再試，或輸入小說網址或編號，例如 https://tw.linovelib.com/novel/3095.html 或 3095。';
+
+// The site's own search is gone. A daily workflow (scripts/linovelib-index.js)
+// publishes every novel's ID, Traditional and simplified title and author, and
+// the plugin searches that list.
+const INDEX_URL =
+  'https://raw.githubusercontent.com/Thsss3341/Ths-LNovel/index/linovelib_tw.json';
+const INDEX_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+const SEARCH_PAGE_SIZE = 40;
+/** [id, Traditional title, simplified title ('' if the same), author] */
+type IndexEntry = [number, string, string, string];
+
+// The simplified edition uses the same novel IDs. Its titles are the ones
+// Bangumi lists, so the MAL lookup searches with them.
+const SIMPLIFIED_SITE = 'https://www.bilinovel.com';
 
 // No rate limit is documented. A small token bucket keeps chapter downloads,
 // which fetch several pages per chapter, from bursting.
@@ -51,6 +65,507 @@ const shuffledOrder = (count: number, chapterId: number) => {
   return order.slice(0, FIXED_PARAGRAPHS).concat(rest);
 };
 
+// ---------------------------------------------------------------------------
+// MyAnimeList titles, the same lookup as in wenku8.ts (ported from ths-manhua's
+// MalTitles.kt). MAL can't find Chinese titles. Bangumi (bgm.tv) maps a Chinese
+// title to the original Japanese one, and AniList, searched with that, returns
+// the MAL ID and the romaji/English titles MAL uses. The result goes on top of
+// the description: "id:12345" pasted into MAL's search finds the exact entry.
+// ---------------------------------------------------------------------------
+
+/** Plugin setting: look up MAL titles. Read at call time, so changes apply at once. */
+const MAL_SETTING = 'malTitles';
+const MAL_CACHE_PREFIX = 'malTitle:';
+const MAL_RECHECK_MS = 7 * 24 * 60 * 60 * 1000;
+const MAL_LOOKUP_TIMEOUT_MS = 20000;
+const MAL_LIKELY_NOTE = '⚠ 非精確匹配，可能不準確';
+const MAL_USER_AGENT =
+  'Thsss3341/ths-lnovel (https://github.com/Thsss3341/Ths-LNovel)';
+
+const BANGUMI_SEARCH_URL = 'https://api.bgm.tv/v0/search/subjects?limit=10';
+const BANGUMI_TYPE_BOOK = 1;
+const BANGUMI_PLATFORM_NOVEL = '小说';
+const BANGUMI_AUTHOR_KEYS = ['作者', '原作'];
+const ANILIST_URL = 'https://graphql.anilist.co';
+const ANILIST_QUERY = `query ($search: String) {
+  Page(perPage: 8) {
+    media(search: $search, type: MANGA, format: NOVEL) {
+      idMal
+      title { romaji english native }
+      synonyms
+    }
+  }
+}`;
+
+const SUBTITLE_SEPARATOR = /[~～：:（(【[—]/;
+const TRAILING_PARENTHESES = /[（(]([^（()）]*)[)）]\s*$/;
+const PUNCTUATION =
+  /[\s~～\-－—_·・:：;；,，.。!！?？'"“”‘’「」『』《》〈〉【】[\]()（）〔〕{}<>/\\|&＆+＋=＝*×☆★♪♡、…]/g;
+
+type MalTitle = {
+  malId?: number;
+  romaji?: string;
+  english?: string;
+  /** The original (usually Japanese) title. */
+  native?: string;
+  /** False when the match rests on a similar title and the author, not identical titles. */
+  exact: boolean;
+};
+
+type Candidate = { name: string; shortened: boolean };
+
+type LikelySubject = {
+  subject: BangumiSubject;
+  sameAuthor: boolean;
+  score: number;
+};
+
+type BangumiSubject = {
+  name: string;
+  name_cn: string;
+  platform?: string;
+  infobox?: { key: string; value: unknown }[];
+};
+
+type AniListMedia = {
+  idMal: number | null;
+  title: {
+    romaji: string | null;
+    english: string | null;
+    native: string | null;
+  };
+  synonyms: string[] | null;
+};
+
+// Case-, width- and whitespace-insensitive.
+const strict = (text?: string | null) => {
+  let value = text || '';
+  try {
+    value = value.normalize('NFKC');
+  } catch {
+    // Without Intl the comparison is merely a little stricter.
+  }
+  return value.toLowerCase().replace(/\s+/g, '');
+};
+
+// Also ignores punctuation and symbols.
+const loose = (text?: string | null) => strict(text).replace(PUNCTUATION, '');
+
+// Han characters without kana: searched on Bangumi, whose titles are Chinese or Japanese.
+const isChinese = (text: string) =>
+  /[㐀-鿿]/.test(text) && !/[぀-ヿ]/.test(text);
+
+/** Dice coefficient over character pairs, 0..1. */
+const similarity = (a: string, b: string) => {
+  if (!a || !b) return 0;
+  const pairs = (text: string) => {
+    const result: string[] = [];
+    for (let i = 0; i < Math.max(1, text.length - 1); i++) {
+      result.push(text.substr(i, 2));
+    }
+    return result;
+  };
+  const pairsA = pairs(a);
+  const pairsB = pairs(b);
+  const remaining = pairsB.slice();
+  let shared = 0;
+  pairsA.forEach(pair => {
+    const index = remaining.indexOf(pair);
+    if (index >= 0) {
+      remaining.splice(index, 1);
+      shared++;
+    }
+  });
+  return (2 * shared) / (pairsA.length + pairsB.length);
+};
+
+/**
+ * 1 minus the edit distance relative to the longer title, 0..1: 败北女角太多了
+ * and 败犬女主太多了 differ in 2 of 7 characters, 0.71.
+ */
+const editSimilarity = (a: string, b: string) => {
+  if (!a || !b) return 0;
+  let previous: number[] = [];
+  for (let j = 0; j <= b.length; j++) previous.push(j);
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j++) {
+      current.push(
+        Math.min(
+          previous[j] + 1,
+          current[j - 1] + 1,
+          previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+        ),
+      );
+    }
+    previous = current;
+  }
+  return 1 - previous[b.length] / Math.max(a.length, b.length);
+};
+
+/** Thresholds for a likely match: with the same author, or on the title alone. */
+const LIKELY_WITH_AUTHOR = 0.3;
+const LIKELY_DICE = 0.75;
+const LIKELY_EDIT = 0.7;
+
+/** Parts of a title to search Bangumi with: its halves, then its first and last 3 characters. */
+const fragments = (title: string) => {
+  const text = loose(title);
+  if (text.length < 5) return [];
+  const half = Math.ceil(text.length / 2);
+  const parts = [
+    text.slice(-half),
+    text.slice(0, half),
+    text.slice(-3),
+    text.slice(0, 3),
+  ];
+  return parts.filter((part, index) => parts.indexOf(part) === index);
+};
+
+/** Runs tasks one at a time, at least [intervalMs] apart, to respect an API's rate limit. */
+const spaced = (intervalMs: number) => {
+  let queue: Promise<unknown> = Promise.resolve();
+  let last = 0;
+  return <T>(task: () => Promise<T>): Promise<T> => {
+    const run = queue.then(async () => {
+      const wait = last + intervalMs - Date.now();
+      if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
+      last = Date.now();
+      return task();
+    });
+    queue = run.catch(() => undefined);
+    return run;
+  };
+};
+
+// AniList allows 30 requests a minute; Bangumi asks clients to go easy too.
+const aniListQueue = spaced(2000);
+const bangumiQueue = spaced(500);
+
+const postJson = async (url: string, body: unknown) => {
+  const res = await fetchApi(url, {
+    method: 'POST',
+    headers: {
+      'User-Agent': MAL_USER_AGENT,
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
+  return res.json();
+};
+
+/**
+ * The title as it is, without a trailing alias in brackets, the alias itself,
+ * and the part before a subtitle separator (marked as shortened, since a short
+ * name can belong to another work).
+ */
+const malCandidates = (title: string): Candidate[] => {
+  const whole = title.trim();
+  const alias = whole.match(TRAILING_PARENTHESES)?.[1]?.trim();
+  const main = whole.replace(TRAILING_PARENTHESES, '').trim();
+  const names: Candidate[] = [whole, main, alias || ''].map(name => ({
+    name,
+    shortened: false,
+  }));
+  [main, alias || ''].forEach(name =>
+    names.push({
+      name: name.split(SUBTITLE_SEPARATOR)[0].trim(),
+      shortened: true,
+    }),
+  );
+  const seen: Record<string, boolean> = {};
+  return names.filter(candidate => {
+    const key = loose(candidate.name);
+    if (key.length < 2 || seen[key]) return false;
+    seen[key] = true;
+    return true;
+  });
+};
+
+class MalLookup {
+  private keys: string[];
+  private bangumiResults: Record<string, BangumiSubject[]> = {};
+  private aniListResults: Record<string, AniListMedia[]> = {};
+
+  constructor(
+    private candidates: Candidate[],
+    private author: string,
+  ) {
+    this.keys = candidates.map(candidate => loose(candidate.name));
+  }
+
+  async run(): Promise<MalTitle | undefined> {
+    const exact = await this.exactViaBangumi();
+    if (exact?.malId) return exact;
+    const viaAniList = await this.exactViaAniList();
+    if (viaAniList) return viaAniList;
+    return exact || (await this.likelyViaBangumi());
+  }
+
+  /** A Bangumi novel titled exactly like one of the names, then its original title on AniList. */
+  private async exactViaBangumi(): Promise<MalTitle | undefined> {
+    let withoutMal: MalTitle | undefined;
+    for (const candidate of this.candidates) {
+      if (!isChinese(candidate.name)) continue;
+      const subject = this.firstExactMatch(
+        await this.bangumi(candidate.name),
+        candidate.name,
+      );
+      if (!subject) continue;
+      // A shortened name ("无职转生") can belong to another work.
+      if (candidate.shortened && !this.sharesAuthor(subject)) continue;
+      const media = await this.exactAniList(
+        subject.name,
+        this.keys.concat(loose(subject.name), loose(subject.name_cn)),
+      );
+      if (media) return this.toMalTitle(media, true);
+      withoutMal = withoutMal || { native: subject.name, exact: true };
+    }
+    return withoutMal;
+  }
+
+  /** An AniList novel titled like one of the names, e.g. through a Chinese synonym. */
+  private async exactViaAniList(): Promise<MalTitle | undefined> {
+    for (const candidate of this.candidates) {
+      if (candidate.shortened) continue;
+      const media = await this.exactAniList(candidate.name, this.keys);
+      if (media) return this.toMalTitle(media, true);
+    }
+    return undefined;
+  }
+
+  /**
+   * The Bangumi novel by the same author with a similar title, or with a very
+   * similar one, for titles translated differently (linovelib's 败北女角太多了 is
+   * 败犬女主太多了 on Bangumi). linovelib gives no year, so the title or the
+   * author has to carry the match.
+   */
+  private async likelyViaBangumi(): Promise<MalTitle | undefined> {
+    const titles = this.candidates.filter(
+      candidate => !candidate.shortened && isChinese(candidate.name),
+    );
+    let best: LikelySubject | undefined;
+    for (const candidate of this.candidates) {
+      if (!isChinese(candidate.name)) continue;
+      best = this.bestLikely(
+        best,
+        await this.bangumi(candidate.name),
+        titles.concat(candidate),
+      );
+    }
+    // Bangumi matches whole words, so a title with a word translated
+    // differently may not come up at all. Its parts usually do ("太多了").
+    for (const fragment of titles.length ? fragments(titles[0].name) : []) {
+      if (best) break;
+      best = this.bestLikely(best, await this.bangumi(fragment), titles);
+    }
+    if (!best) return undefined;
+    const { subject } = best;
+    const media = await this.exactAniList(subject.name, [
+      loose(subject.name),
+      loose(subject.name_cn),
+    ]);
+    return media
+      ? this.toMalTitle(media, false)
+      : { native: subject.name, exact: false };
+  }
+
+  /** [best], or the subject among [subjects] that resembles one of [titles] more. */
+  private bestLikely(
+    best: LikelySubject | undefined,
+    subjects: BangumiSubject[],
+    titles: Candidate[],
+  ) {
+    for (const subject of subjects) {
+      let dice = 0;
+      let edit = 0;
+      titles.forEach(title => {
+        [subject.name_cn, subject.name].forEach(name => {
+          dice = Math.max(dice, similarity(loose(title.name), loose(name)));
+          edit = Math.max(edit, editSimilarity(loose(title.name), loose(name)));
+        });
+      });
+      const score = Math.max(dice, edit);
+      const sameAuthor = this.sharesAuthor(subject);
+      if (
+        !(
+          (sameAuthor && score >= LIKELY_WITH_AUTHOR) ||
+          dice >= LIKELY_DICE ||
+          edit >= LIKELY_EDIT
+        )
+      ) {
+        continue;
+      }
+      if (
+        !best ||
+        Number(sameAuthor) > Number(best.sameAuthor) ||
+        (sameAuthor === best.sameAuthor && score > best.score)
+      ) {
+        best = { subject, sameAuthor, score };
+      }
+    }
+    return best;
+  }
+
+  private firstExactMatch(subjects: BangumiSubject[], name: string) {
+    // Strict first, so a sequel with extra symbols isn't picked over the original.
+    for (const normalize of [strict, loose]) {
+      const key = normalize(name);
+      const match = subjects.find(
+        subject =>
+          key === normalize(subject.name_cn) || key === normalize(subject.name),
+      );
+      if (match) return match;
+    }
+    return undefined;
+  }
+
+  /**
+   * Whether linovelib's author (a Chinese or Japanese spelling, e.g. 伏濑 or 伏瀬)
+   * shares at least half its characters with one of Bangumi's authors.
+   */
+  private sharesAuthor(subject: BangumiSubject) {
+    const ours = loose(this.author.replace(/[（(].*?[)）]/g, ''));
+    if (ours.length < 2) return false;
+    const values: string[] = [];
+    (subject.infobox || [])
+      .filter(item => BANGUMI_AUTHOR_KEYS.indexOf(item.key) >= 0)
+      .forEach(item => {
+        if (typeof item.value === 'string') {
+          item.value.split(/[、,，/]/).forEach(value => values.push(value));
+        } else if (Array.isArray(item.value)) {
+          item.value.forEach(entry => {
+            if (entry && typeof entry.v === 'string') values.push(entry.v);
+          });
+        }
+      });
+    return values.some(value => {
+      const theirs = loose(value);
+      if (theirs.length < 2) return false;
+      const shared = ours
+        .split('')
+        .filter(char => theirs.indexOf(char) >= 0).length;
+      return shared * 2 >= Math.max(ours.length, theirs.length);
+    });
+  }
+
+  /** The AniList novel whose native, romaji/English or alternative title is one of [names]. */
+  private async exactAniList(name: string, names: string[]) {
+    const keys = names.filter(Boolean);
+    const rank = (media: AniListMedia) => {
+      if (keys.indexOf(loose(media.title.native)) >= 0) return 0;
+      if (
+        keys.indexOf(loose(media.title.romaji)) >= 0 ||
+        keys.indexOf(loose(media.title.english)) >= 0
+      ) {
+        return 1;
+      }
+      if (
+        (media.synonyms || []).some(
+          synonym => keys.indexOf(loose(synonym)) >= 0,
+        )
+      ) {
+        return 2;
+      }
+      return -1;
+    };
+    let best: { media: AniListMedia; rank: number } | undefined;
+    for (const media of await this.aniList(name)) {
+      const r = rank(media);
+      if (media.idMal && r >= 0 && (!best || r < best.rank))
+        best = { media, rank: r };
+    }
+    return best?.media;
+  }
+
+  private toMalTitle(media: AniListMedia, exact: boolean): MalTitle {
+    return {
+      malId: media.idMal || undefined,
+      romaji: media.title.romaji || undefined,
+      english: media.title.english || undefined,
+      native: media.title.native || undefined,
+      exact,
+    };
+  }
+
+  private async bangumi(name: string) {
+    if (!this.bangumiResults[name]) {
+      const response = await bangumiQueue(() =>
+        postJson(BANGUMI_SEARCH_URL, {
+          keyword: name,
+          filter: { type: [BANGUMI_TYPE_BOOK] },
+        }),
+      );
+      this.bangumiResults[name] = (
+        (response?.data || []) as BangumiSubject[]
+      ).filter(subject => subject.platform === BANGUMI_PLATFORM_NOVEL);
+    }
+    return this.bangumiResults[name];
+  }
+
+  private async aniList(name: string) {
+    if (!this.aniListResults[name]) {
+      const response = await aniListQueue(() =>
+        postJson(ANILIST_URL, {
+          query: ANILIST_QUERY,
+          variables: { search: name },
+        }),
+      );
+      this.aniListResults[name] = (response?.data?.Page?.media ||
+        []) as AniListMedia[];
+    }
+    return this.aniListResults[name];
+  }
+}
+
+/**
+ * Finds the MAL entry of a novel. Results are cached in the plugin's
+ * storage: exact matches for good, likely matches and misses for a week.
+ * Failed lookups aren't cached.
+ */
+const findMalTitle = async (
+  title: string,
+  author: string,
+): Promise<MalTitle | undefined> => {
+  const cacheKey = MAL_CACHE_PREFIX + loose(title);
+  const cached = storage.get(cacheKey) as { title?: MalTitle } | undefined;
+  if (cached) return cached.title;
+
+  const result = await Promise.race([
+    new MalLookup(malCandidates(title), author).run(),
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error('MAL lookup timed out')),
+        MAL_LOOKUP_TIMEOUT_MS,
+      ),
+    ),
+  ]);
+  storage.set(
+    cacheKey,
+    { title: result },
+    result?.exact && result.malId ? undefined : Date.now() + MAL_RECHECK_MS,
+  );
+  return result;
+};
+
+/** The lines added to the top of the description. "id:12345" stays on a line of its own for copying. */
+const malLines = (mal: MalTitle) => {
+  const lines: string[] = [];
+  if (mal.malId) {
+    lines.push('MAL：' + (mal.romaji || mal.english || mal.native));
+    lines.push('id:' + mal.malId);
+  } else {
+    lines.push('MAL：未找到（以下為Bangumi原名）');
+  }
+  if (!mal.exact) lines.push(MAL_LIKELY_NOTE);
+  if (mal.native) lines.push('日文名：' + mal.native);
+  if (mal.english && mal.english !== mal.romaji)
+    lines.push('英文名：' + mal.english);
+  return lines.join('\n');
+};
+
 type ReadParams = { chapterId: number; next: string };
 
 class LinovelibTwPlugin implements Plugin.PluginBase {
@@ -58,7 +573,7 @@ class LinovelibTwPlugin implements Plugin.PluginBase {
   name = '嗶哩輕小說(繁體)';
   icon = 'src/cn/linovelib_tw_ths/icon.png';
   site = 'https://tw.linovelib.com';
-  version = '1.0.0';
+  version = '1.1.0';
 
   // Illustrations on img3.readpai.com answer 403 without a linovelib Referer.
   imageRequestInit: Plugin.ImageRequestInit = {
@@ -171,11 +686,41 @@ class LinovelibTwPlugin implements Plugin.PluginBase {
       chapters: [],
     };
 
+    if (novel.name && storage.get(MAL_SETTING) !== false) {
+      try {
+        const original = await this.simplifiedTitle(novelPath);
+        const mal = await findMalTitle(
+          original?.title || novel.name,
+          original?.author || novel.author || '',
+        );
+        if (mal) novel.summary = malLines(mal) + '\n\n' + novel.summary;
+      } catch {
+        // Bangumi or AniList unreachable: show the novel without the MAL lines.
+      }
+    }
+
     const catalogPath =
       $('#btnReadBook').attr('href') ||
       novelPath.replace(/\.html$/, '/catalog');
     novel.chapters = this.parseChapterList(await this.fetchPage(catalogPath));
     return novel;
+  }
+
+  /** The novel's title and author on the simplified edition, if it has them. */
+  private async simplifiedTitle(novelPath: string) {
+    try {
+      const res = await fetchApi(SIMPLIFIED_SITE + novelPath, {
+        headers: { Referer: SIMPLIFIED_SITE + '/' },
+      });
+      if (!res.ok) return undefined;
+      const $ = parseHTML(await res.text());
+      const detail = $('#bookDetailWrapper');
+      const title = detail.find('.book-title').first().text().trim();
+      if (!title) return undefined;
+      return { title, author: detail.find('.authorname a').text().trim() };
+    } catch {
+      return undefined;
+    }
   }
 
   private parseChapterList($: CheerioAPI) {
@@ -296,25 +841,107 @@ class LinovelibTwPlugin implements Plugin.PluginBase {
     searchTerm: string,
     pageNo: number,
   ): Promise<Plugin.NovelItem[]> {
-    if (pageNo > 1) return [];
-    const id = searchTerm.trim().match(/(?:novel\/)?(\d+)(?:\.html|\/|$)/)?.[1];
-    if (!id) throw new Error(SEARCH_HINT);
-    const path = `/novel/${id}.html`;
+    const term = searchTerm.trim();
+    // A novel's URL opens that novel.
+    const linked = term.match(/novel\/(\d+)/)?.[1];
+    if (linked) return pageNo > 1 ? [] : this.novelById(Number(linked));
+
+    const results: Plugin.NovelItem[] = [];
+    // A number is also tried as an ID, ahead of titles containing it ("86").
+    if (pageNo === 1 && /^\d+$/.test(term)) {
+      results.push(...(await this.novelById(Number(term))));
+    }
+    const start = (pageNo - 1) * SEARCH_PAGE_SIZE;
+    this.matchIndex(await this.loadIndex(), term)
+      .slice(start, start + SEARCH_PAGE_SIZE)
+      .forEach(entry => {
+        if (results.some(novel => novel.path === this.novelPath(entry[0]))) {
+          return;
+        }
+        results.push({
+          name: entry[1],
+          path: this.novelPath(entry[0]),
+          cover: this.coverUrl(entry[0]),
+        });
+      });
+    return results;
+  }
+
+  private novelPath(id: number) {
+    return `/novel/${id}.html`;
+  }
+
+  private coverUrl(id: number) {
+    return `${this.site}/files/article/image/${Math.floor(id / 1000)}/${id}/${id}s.jpg`;
+  }
+
+  private async novelById(id: number): Promise<Plugin.NovelItem[]> {
+    const path = this.novelPath(id);
     const $ = await this.fetchPage(path);
     const name = $('#bookDetailWrapper .book-title').first().text().trim();
     if (!name) return [];
     return [
-      {
-        name,
-        path,
-        cover: $('#bookDetailWrapper img.book-cover').attr('src'),
-      },
+      { name, path, cover: $('#bookDetailWrapper img.book-cover').attr('src') },
     ];
+  }
+
+  private index?: { entries: IndexEntry[]; loadedAt: number };
+
+  private async loadIndex(): Promise<IndexEntry[]> {
+    if (this.index && Date.now() - this.index.loadedAt < INDEX_MAX_AGE_MS) {
+      return this.index.entries;
+    }
+    let entries: IndexEntry[] | undefined;
+    try {
+      const res = await fetchApi(INDEX_URL);
+      if (res.ok) entries = (await res.json())?.novels;
+    } catch {
+      // Reported below.
+    }
+    if (!Array.isArray(entries) || !entries.length) {
+      // An older copy is better than none.
+      if (this.index) return this.index.entries;
+      throw new Error(INDEX_HINT);
+    }
+    this.index = { entries, loadedAt: Date.now() };
+    return entries;
+  }
+
+  /**
+   * Novels whose Traditional or simplified title, or author, contains the
+   * term, ignoring spaces and punctuation: exact titles first, then titles
+   * starting with it, then other titles, then authors.
+   */
+  private matchIndex(entries: IndexEntry[], term: string) {
+    const key = loose(term);
+    if (!key) return [];
+    const ranked: { entry: IndexEntry; rank: number }[] = [];
+    entries.forEach(entry => {
+      const titles = [loose(entry[1]), loose(entry[2])].filter(Boolean);
+      let rank = -1;
+      if (titles.some(title => title === key)) rank = 0;
+      else if (titles.some(title => title.indexOf(key) === 0)) rank = 1;
+      else if (titles.some(title => title.indexOf(key) >= 0)) rank = 2;
+      else if (loose(entry[3]).indexOf(key) >= 0) rank = 3;
+      if (rank >= 0) ranked.push({ entry, rank });
+    });
+    ranked.sort(
+      (a, b) => a.rank - b.rank || a.entry[1].length - b.entry[1].length,
+    );
+    return ranked.map(item => item.entry);
   }
 
   resolveUrl(path: string): string {
     return this.site + path.replace(/(#next)+$/, '');
   }
+
+  pluginSettings = {
+    [MAL_SETTING]: {
+      value: true,
+      label: '簡介中顯示MAL標題和ID（經Bangumi和AniList查找，方便MAL追蹤）',
+      type: 'Switch',
+    },
+  };
 
   filters = {
     rank: {

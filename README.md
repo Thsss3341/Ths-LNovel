@@ -32,8 +32,8 @@ repository.
 
 ### MAL tracking
 
-MyAnimeList can't find wenku8's Chinese titles, so the plugin looks each novel up when you open it
-and adds its MAL entry to the top of the description:
+MyAnimeList can't find Chinese titles, so the wenku8 and linovelib plugins look each novel up when
+you open it and add its MAL entry to the top of the description:
 
 ```
 MAL：Mushoku Tensei: Isekai Ittara Honki Dasu
@@ -46,7 +46,8 @@ id:70261
 search. That gives the exact entry.
 
 **How a match is found** (the same way as in ths-manhua and ths-anime): the plugin searches
-[Bangumi](https://bgm.tv) for the Chinese title to get the original Japanese title, then searches
+[Bangumi](https://bgm.tv) for the Chinese title (for linovelib, the simplified title from
+www.bilinovel.com, which is how Bangumi lists it) to get the original Japanese title, then searches
 [AniList](https://anilist.co) with that for the MAL ID and the romaji and English titles.
 
 - **Exact match:** the titles are identical.
@@ -63,7 +64,8 @@ search. That gives the exact entry.
 **Other notes:**
 - Results are cached: exact matches for good, likely matches and misses for a week. Failed
   lookups (no network) aren't cached and are retried next time.
-- Turn the lookup off with **简介中显示MAL标题和ID** in the plugin's settings.
+- Turn the lookup off with **简介中显示MAL标题和ID** (linovelib: **簡介中顯示MAL標題和ID**) in the
+  plugin's settings.
 - Novels already in your library get the MAL lines when you refresh them.
 
 ### linovelib (Traditional Chinese) notes
@@ -73,8 +75,14 @@ A rewrite of the community repository's `Linovelib(繁體)` plugin. It has its o
 
 - The site shuffles every paragraph after the 20th and reorders them with a script in the
   browser. The plugin applies the same reordering, so chapters read in the right order.
-- The site has no search of its own any more (its search box opens Google). Search with a novel's
-  URL or number instead, e.g. `https://tw.linovelib.com/novel/3095.html` or `3095`.
+- The site has no search of its own any more (its search box opens Google), so the plugin searches
+  a list of every novel instead. The [Linovelib Search Index](.github/workflows/linovelib-index.yml)
+  workflow rebuilds it daily from the site's full novel list and from
+  [www.bilinovel.com](https://www.bilinovel.com), the simplified edition with the same novel IDs, and
+  publishes it to the `index` branch. Search matches Traditional or simplified titles and authors
+  (`史莱姆` and `史萊姆` both work). A novel's URL or number, e.g.
+  `https://tw.linovelib.com/novel/3095.html` or `3095`, opens that novel directly, including one
+  added since the last rebuild.
 - Some chapters have no link in the table of contents. The plugin finds them through the previous
   chapter's "next chapter" link, which costs a few extra requests the first time.
 - Chapters are split into pages of about 1,000 characters, so a chapter takes several requests.
