@@ -75,6 +75,9 @@ A rewrite of the community repository's `Linovelib(繁體)` plugin. It has its o
 
 - The site shuffles every paragraph after the 20th and reorders them with a script in the
   browser. The plugin applies the same reordering, so chapters read in the right order.
+- Browse with the site's rankings, or **完結全本** for completed novels (like wenku8's). The
+  **狀態** (e.g. 已經完本), **動畫化**, **類型** and **字數** filters select from the site's full novel
+  list, sorted by the chosen ranking; 月/周雞蛋榜 and 新書榜 sort it by 最近更新 instead.
 - The site has no search of its own any more (its search box opens Google), so the plugin searches
   a list of every novel instead. The [Linovelib Search Index](.github/workflows/linovelib-index.yml)
   workflow rebuilds it daily from the site's full novel list and from

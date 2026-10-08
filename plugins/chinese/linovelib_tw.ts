@@ -568,12 +568,27 @@ const malLines = (mal: MalTitle) => {
 
 type ReadParams = { chapterId: number; next: string };
 
+/** The 排行榜 entry that lists completed novels, like wenku8's 完结全本. */
+const COMPLETED_LIST = 'completed';
+/** Rankings the full novel list can also sort by; the others fall back to 最近更新. */
+const LIST_ORDERS = [
+  'monthvisit',
+  'weekvisit',
+  'monthvote',
+  'weekvote',
+  'monthflower',
+  'weekflower',
+  'lastupdate',
+  'postdate',
+  'goodnum',
+];
+
 class LinovelibTwPlugin implements Plugin.PluginBase {
   id = 'linovelib_tw_ths';
   name = '嗶哩輕小說(繁體)';
   icon = 'src/cn/linovelib_tw_ths/icon.png';
   site = 'https://tw.linovelib.com';
-  version = '1.1.0';
+  version = '1.2.0';
 
   // Illustrations on img3.readpai.com answer 403 without a linovelib Referer.
   imageRequestInit: Plugin.ImageRequestInit = {
@@ -628,7 +643,9 @@ class LinovelibTwPlugin implements Plugin.PluginBase {
       if (!path || !/^\/novel\/\d+\.html$/.test(path)) return;
       const img = $(el).find('.book-cover img');
       novels.push({
-        name: $(el).find('.book-title').text().trim(),
+        // The full novel list shortens long titles; the cover's alt text doesn't.
+        name:
+          img.attr('alt')?.trim() || $(el).find('.book-title').text().trim(),
         path,
         cover: img.attr('data-src') || img.attr('src'),
       });
@@ -643,9 +660,32 @@ class LinovelibTwPlugin implements Plugin.PluginBase {
       filters,
     }: Plugin.PopularNovelsOptions<typeof this.filters>,
   ): Promise<Plugin.NovelItem[]> {
-    const rank = showLatestNovels ? 'lastupdate' : filters.rank.value;
-    const $ = await this.fetchPage(`/top/${rank}/${pageNo}.html`);
-    return this.parseNovelList($);
+    if (showLatestNovels) {
+      return this.parseNovelList(
+        await this.fetchPage(`/top/lastupdate/${pageNo}.html`),
+      );
+    }
+    const rank = filters.rank.value;
+    const status = rank === COMPLETED_LIST ? '5' : filters.status.value;
+    const anime = filters.anime.value;
+    const type = filters.type.value;
+    const words = filters.words.value;
+    if (
+      rank !== COMPLETED_LIST &&
+      status === '0' &&
+      anime === '0' &&
+      type === '0' &&
+      words === '0'
+    ) {
+      return this.parseNovelList(
+        await this.fetchPage(`/top/${rank}/${pageNo}.html`),
+      );
+    }
+    // The full novel list (/wenku/) takes the filters; the rankings don't.
+    // Its URL is order_tag_status_anime_type_sort_subtype_words_page_update.
+    const order = LIST_ORDERS.indexOf(rank) >= 0 ? rank : 'lastupdate';
+    const path = `/wenku/${order}_0_${status}_${anime}_${type}_0_0_${words}_${pageNo}_0.html`;
+    return this.parseNovelList(await this.fetchPage(path));
   }
 
   async parseNovel(novelPath: string): Promise<Plugin.SourceNovel> {
@@ -945,10 +985,11 @@ class LinovelibTwPlugin implements Plugin.PluginBase {
 
   filters = {
     rank: {
-      label: '排行榜',
+      label: '排行榜／排序',
       value: 'monthvisit',
       options: [
         { label: '月點擊榜', value: 'monthvisit' },
+        { label: '完結全本', value: COMPLETED_LIST },
         { label: '周點擊榜', value: 'weekvisit' },
         { label: '月推薦榜', value: 'monthvote' },
         { label: '周推薦榜', value: 'weekvote' },
@@ -960,6 +1001,57 @@ class LinovelibTwPlugin implements Plugin.PluginBase {
         { label: '最新入庫', value: 'postdate' },
         { label: '收藏榜', value: 'goodnum' },
         { label: '新書榜', value: 'newhot' },
+      ],
+      type: FilterTypes.Picker,
+    },
+    // These select from the full novel list, sorted by the ranking above
+    // (月/周雞蛋榜 and 新書榜 sort by 最近更新 there).
+    status: {
+      label: '狀態',
+      value: '0',
+      options: [
+        { label: '不限', value: '0' },
+        { label: '已經完本', value: '5' },
+        { label: '新書上傳', value: '1' },
+        { label: '情節展開', value: '2' },
+        { label: '精彩紛呈', value: '3' },
+        { label: '接近尾聲', value: '4' },
+      ],
+      type: FilterTypes.Picker,
+    },
+    anime: {
+      label: '動畫化',
+      value: '0',
+      options: [
+        { label: '不限', value: '0' },
+        { label: '已動畫化', value: '1' },
+        { label: '未動畫化', value: '2' },
+      ],
+      type: FilterTypes.Picker,
+    },
+    type: {
+      label: '類型',
+      value: '0',
+      options: [
+        { label: '不限', value: '0' },
+        { label: '日本輕小說', value: '1' },
+        { label: '華文輕小說', value: '2' },
+        { label: 'Web輕小說', value: '3' },
+        { label: '輕改漫畫', value: '4' },
+        { label: '韓國輕小說', value: '5' },
+      ],
+      type: FilterTypes.Picker,
+    },
+    words: {
+      label: '字數',
+      value: '0',
+      options: [
+        { label: '不限', value: '0' },
+        { label: '30萬以下', value: '1' },
+        { label: '30-50萬', value: '2' },
+        { label: '50-100萬', value: '3' },
+        { label: '100-200萬', value: '4' },
+        { label: '200萬以上', value: '5' },
       ],
       type: FilterTypes.Picker,
     },
