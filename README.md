@@ -29,6 +29,42 @@ repository.
 - The site has withdrawn some novels for copyright reasons (因版权问题). They have no chapters.
   Nekori opens them with a note in the summary; LNReader shows "Unable to load novel".
 
+### MAL tracking
+
+MyAnimeList can't find wenku8's Chinese titles, so the plugin looks each novel up when you open it
+and adds its MAL entry to the top of the description:
+
+```
+MAL：Mushoku Tensei: Isekai Ittara Honki Dasu
+id:70261
+日文名：無職転生 ～異世界行ったら本気だす～
+英文名：Mushoku Tensei: Jobless Reincarnation
+```
+
+**Tracking a novel:** copy `id:70261` from the description and paste it into the MAL tracker's
+search. That gives the exact entry.
+
+**How a match is found** (the same way as in ths-manhua and ths-anime): the plugin searches
+[Bangumi](https://bgm.tv) for the Chinese title to get the original Japanese title, then searches
+[AniList](https://anilist.co) with that for the MAL ID and the romaji and English titles.
+
+- **Exact match:** the titles are identical.
+- **Likely match:** the title is only similar (a different translation), and either the author
+  agrees or the titles differ in only a few characters (at least 70% the same, e.g. wenku8's
+  败北女角太多了 and Bangumi's 败犬女主太多了). It is marked **⚠ 非精确匹配，可能不准确**; check the
+  entry before tracking it. When the whole title finds nothing, the plugin also searches Bangumi
+  with parts of it, since Bangumi matches whole words.
+- **No match:** the description is unchanged. This happens when wenku8's translation is too
+  different from Bangumi's, or when the novel isn't on MAL.
+- **Bangumi only:** if AniList has no MAL ID, the description shows `MAL：未找到` with the
+  Japanese title, which you can still search MAL for.
+
+**Other notes:**
+- Results are cached: exact matches for good, likely matches and misses for a week. Failed
+  lookups (no network) aren't cached and are retried next time.
+- Turn the lookup off with **简介中显示MAL标题和ID** in the plugin's settings.
+- Novels already in your library get the MAL lines when you refresh them.
+
 ## Using this repository in LNReader or Nekori
 
 Every push to `main` that touches `plugins/`, `public/`, or `scripts/` runs the
