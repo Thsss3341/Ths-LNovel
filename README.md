@@ -10,6 +10,7 @@ repository.
 | Plugin | Site | Language | Source |
 | --- | --- | --- | --- |
 | 轻小说文库 (wenku8) | https://www.wenku8.net | Chinese | [`plugins/chinese/wenku8.ts`](plugins/chinese/wenku8.ts) |
+| 嗶哩輕小說(繁體) (linovelib) | https://tw.linovelib.com | Chinese | [`plugins/chinese/linovelib_tw.ts`](plugins/chinese/linovelib_tw.ts) |
 
 ### wenku8 notes
 
@@ -64,6 +65,25 @@ search. That gives the exact entry.
   lookups (no network) aren't cached and are retried next time.
 - Turn the lookup off with **简介中显示MAL标题和ID** in the plugin's settings.
 - Novels already in your library get the MAL lines when you refresh them.
+
+### linovelib (Traditional Chinese) notes
+
+A rewrite of the community repository's `Linovelib(繁體)` plugin. It has its own ID
+(`linovelib_tw_ths`), so both can be installed side by side.
+
+- The site shuffles every paragraph after the 20th and reorders them with a script in the
+  browser. The plugin applies the same reordering, so chapters read in the right order.
+- The site has no search of its own any more (its search box opens Google). Search with a novel's
+  URL or number instead, e.g. `https://tw.linovelib.com/novel/3095.html` or `3095`.
+- Some chapters have no link in the table of contents. The plugin finds them through the previous
+  chapter's "next chapter" link, which costs a few extra requests the first time.
+- Chapters are split into pages of about 1,000 characters, so a chapter takes several requests.
+  Requests are spaced about a second apart.
+- Clients the site takes for bots get a shortened chapter that ends with
+  「內容加載失敗」. The plugin reports this instead of showing the shortened text; opening the
+  site's home page in the WebView may help.
+- Illustrations come from `img3.readpai.com`, which needs a linovelib `Referer`; the plugin sends
+  one.
 
 ## Using this repository in LNReader or Nekori
 
