@@ -19,3 +19,6 @@ broken-sites-report.json
 .agents/
 .claude/
 .cursor/
+
+# linovelib search index (built by scripts/linovelib-index.js)
+.index
