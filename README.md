@@ -11,6 +11,8 @@ repository.
 | --- | --- | --- | --- |
 | 轻小说文库 (wenku8) | https://www.wenku8.net | Chinese | [`plugins/chinese/wenku8.ts`](plugins/chinese/wenku8.ts) |
 | 嗶哩輕小說(繁體) (linovelib) | https://tw.linovelib.com | Chinese | [`plugins/chinese/linovelib_tw.ts`](plugins/chinese/linovelib_tw.ts) |
+| 爱下电子书 (ixdzs8) | https://ixdzs8.com | Chinese | [`plugins/chinese/ixdzs8.ts`](plugins/chinese/ixdzs8.ts) |
+| 全本小说网 (quanben) | https://www.quanben.io | Chinese | [`plugins/chinese/quanben.ts`](plugins/chinese/quanben.ts) |
 
 ### wenku8 notes
 
@@ -29,6 +31,20 @@ repository.
 - Chapters are grouped by volume (卷). Illustrations are loaded from `pic.wenku8.com`.
 - The site has withdrawn some novels for copyright reasons (因版权问题). They have no chapters.
   Nekori opens them with a note in the summary; LNReader shows "Unable to load novel".
+
+### Web novel sites (ixdzs8, quanben)
+
+Two sites for Chinese web novels (起点 and similar), rewritten from the community repository's
+plugins with their own IDs (`ixdzs8_ths`, `quanben_ths`).
+
+- **爱下电子书** carries the most titles. Browse its 热门排行, 全本完结 and 最近更新 lists, or pick a
+  分类, which can be narrowed by 状态 (连载中/已完结), 排序 (最新/最热) and 字数. Chapter pages pass
+  the site's own security check by themselves. Chapters the site hasn't filled in yet
+  (「手打中！请稍后刷新！」) show an error instead of the placeholder, so try them again later.
+- **全本小说网** has fewer titles but often complete ones. Browse by 分类. The site drops a fair
+  share of connections, so the plugin retries each request up to three times. Its chapter list
+  skips a few chapters (the site's own bug); the plugin fills them in as 第N章.
+- The same title can be a different book on each site; check the author.
 
 ### MAL tracking
 
