@@ -13,6 +13,7 @@ repository.
 | 嗶哩輕小說(繁體) (linovelib) | https://tw.linovelib.com | Chinese | [`plugins/chinese/linovelib_tw.ts`](plugins/chinese/linovelib_tw.ts) |
 | 爱下电子书 (ixdzs8) | https://ixdzs8.com | Chinese | [`plugins/chinese/ixdzs8.ts`](plugins/chinese/ixdzs8.ts) |
 | 全本小说网 (quanben) | https://www.quanben.io | Chinese | [`plugins/chinese/quanben.ts`](plugins/chinese/quanben.ts) |
+| 小說543 (novel543) | https://www.novel543.com | Chinese | [`plugins/chinese/novel543.ts`](plugins/chinese/novel543.ts) |
 
 ### wenku8 notes
 
@@ -44,6 +45,12 @@ plugins with their own IDs (`ixdzs8_ths`, `quanben_ths`).
 - **全本小说网** has fewer titles but often complete ones. Browse by 分类. The site drops a fair
   share of connections, so the plugin retries each request up to three times. Its chapter list
   skips a few chapters (the site's own bug); the plugin fills them in as 第N章.
+- **小說543** (Traditional Chinese) is behind Cloudflare: open the site in the WebView once to
+  pass the check, and again when the plugin says the check has expired. Title search triggers a
+  stricter check than browsing; a novel's URL or 10-digit ID (e.g. `0520109072`) opens it
+  directly. Browse 首頁推薦 or the 書庫 by 分類, 狀態 (連載/完結) and 頻道 (男生/女生). Long
+  chapters span several pages, which the plugin joins. Chapters the site can't show
+  (「章節錯誤」) report an error instead of an empty page.
 - The same title can be a different book on each site; check the author.
 
 ### MAL tracking
