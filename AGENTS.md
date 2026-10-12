@@ -12,8 +12,10 @@ the following:
 - the React/Vite plugin playground under `src/`; or
 - build, publishing, and live-check tooling under `scripts/`.
 
-Read `README.md` for the project entry points, `docs/quickstart.md` before adding a plugin, and
-`docs/docs.md` for the plugin API. `docs/testing.md` explains the live-site checker.
+`README.md` (English) and `README.zh-CN.md` (Simplified Chinese) are the user guide; keep both in
+sync when a plugin is added or its behaviour changes. `.github/MAINTAINING.md` covers publishing,
+the linovelib search index and local development. Read `docs/quickstart.md` before adding a plugin,
+`docs/docs.md` for the plugin API, and `docs/testing.md` for the live-site checker.
 
 ## Environment and package management
 
