@@ -29,8 +29,33 @@ const decode = (text: string, chars: string) => {
 
 const LOCKED_HINT =
   '番茄小说网页版只免费提供前几章，这一章需要番茄 SVIP：请在 WebView 中登录 SVIP 账号后重试，或在番茄小说 App 中免费阅读。';
-const SEARCH_HINT =
-  '番茄小说的搜索需要先通过滑块验证：请在 WebView 中打开番茄小说并搜索一次，然后返回重试；也可以直接搜索小说网址或书号。';
+const INDEX_HINT =
+  '无法下载番茄小说的搜索书目，请稍后再试；也可以在 WebView 中搜索，再把小说网址粘贴到这里搜索。';
+const NOT_FOUND_HINT =
+  '搜索书目中没有这本书（书目只收录各分类最热门的书）：请在 WebView 中搜索，再把小说网址粘贴到这里搜索。';
+
+// The site's own search needs a signature that only its web pages make. A
+// daily workflow (scripts/fanqie-index.js) publishes the most-read books of
+// every category from the library list, and the plugin searches that list.
+const INDEX_URL =
+  'https://raw.githubusercontent.com/Thsss3341/Ths-LNovel/index-fanqie/fanqie.json';
+const INDEX_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+const SEARCH_PAGE_SIZE = 40;
+/** [book id, name, author, cover image id] */
+type IndexEntry = [string, string, string, string];
+
+const PUNCTUATION =
+  /[\s~～\-－—_·・:：;；,，.。!！?？'"“”‘’「」『』《》〈〉【】[\]()（）〔〕{}<>/\\|&＆+＋=＝*×☆★♪♡、…]/g;
+// Ignores case, width, spaces and punctuation.
+const loose = (text: string) => {
+  let value = text;
+  try {
+    value = value.normalize('NFKC');
+  } catch {
+    // Without Intl the comparison is merely a little stricter.
+  }
+  return value.toLowerCase().replace(PUNCTUATION, '');
+};
 
 type BookItem = {
   book_id?: string;
@@ -48,22 +73,23 @@ class FanqiePlugin implements Plugin.PluginBase {
   id = 'fanqie_ths';
   name = '番茄小说';
   icon = 'src/cn/fanqie_ths/icon.png';
-  site = 'https://fanqienovel.com';
-  version = '1.0.0';
+  // The app's WebView opens this page. The site's other pages have no search
+  // box on phones; this one does.
+  site = 'https://fanqienovel.com/search/%E7%95%AA%E8%8C%84';
+  version = '1.1.0';
+
+  private base = 'https://fanqienovel.com';
 
   private async fetchText(path: string): Promise<string> {
-    const url = this.site + path;
-    const res = await fetchApi(url, { headers: { Referer: this.site + '/' } });
+    const url = this.base + path;
+    const res = await fetchApi(url, { headers: { Referer: this.base + '/' } });
     if (!res.ok)
       throw new Error(`无法访问番茄小说（HTTP ${res.status}）：${url}`);
     return res.text();
   }
 
   private async fetchJson<T>(path: string): Promise<ApiResponse<T>> {
-    const text = await this.fetchText(path);
-    // The site answers an unverified search with an empty body.
-    if (!text.trim()) return {};
-    return JSON.parse(text);
+    return JSON.parse(await this.fetchText(path));
   }
 
   /** The page's server-rendered state, window.__INITIAL_STATE__. */
@@ -72,7 +98,7 @@ class FanqiePlugin implements Plugin.PluginBase {
     const json = html.match(
       /window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\});?\s*\}\s*\)\s*\(\)/,
     )?.[1];
-    if (!json) throw new Error('无法读取番茄小说的页面：' + this.site + path);
+    if (!json) throw new Error('无法读取番茄小说的页面：' + this.base + path);
     return JSON.parse(json.replace(/:undefined([,}])/g, ':null$1'));
   }
 
@@ -211,28 +237,97 @@ class FanqiePlugin implements Plugin.PluginBase {
     pageNo: number,
   ): Promise<Plugin.NovelItem[]> {
     const term = searchTerm.trim();
-    // A novel's URL or book number opens that novel.
-    const id =
-      term.match(/fanqienovel\.com\/page\/(\d+)/)?.[1] ||
-      term.match(/^\d{16,20}$/)?.[0];
+    const id = await this.linkedBookId(term);
     if (id) {
       if (pageNo > 1) return [];
       const path = `/page/${id}`;
       const novel = await this.parseNovel(path);
       return [{ name: novel.name, path, cover: novel.cover }];
     }
-    const data = await this.fetchJson<{
-      search_book_data_list?: BookItem[];
-    }>(
-      `/api/author/search/search_book/v1?filter=127,127,127,127&page_count=10&page_index=${pageNo - 1}` +
-        `&query_type=0&query_word=${encodeURIComponent(term)}`,
-    );
-    if (!data.data) throw new Error(SEARCH_HINT);
-    return this.novelItems(data.data.search_book_data_list, READER_CHARS);
+    const start = (pageNo - 1) * SEARCH_PAGE_SIZE;
+    const matches = this.matchIndex(await this.loadIndex(), term);
+    if (!matches.length && pageNo === 1 && loose(term)) {
+      throw new Error(NOT_FOUND_HINT);
+    }
+    return matches.slice(start, start + SEARCH_PAGE_SIZE).map(entry => ({
+      name: entry[1],
+      path: `/page/${entry[0]}`,
+      cover: this.cover(entry[3] && `novel-pic/${entry[3]}`),
+    }));
+  }
+
+  /**
+   * The book a pasted link or number points to: a book page, a chapter, a
+   * link shared from the 番茄小说 app (book_id=...), or a bare book number.
+   */
+  private async linkedBookId(term: string): Promise<string | undefined> {
+    const id =
+      term.match(/fanqienovel\.com\/page\/(\d+)/)?.[1] ||
+      term.match(/book_?id=(\d+)/i)?.[1] ||
+      term.match(/^\d{16,20}$/)?.[0];
+    if (id) return id;
+    const chapter = term.match(/fanqienovel\.com\/reader\/(\d+)/)?.[1];
+    if (!chapter) return undefined;
+    const state = await this.fetchState(`/reader/${chapter}`);
+    return state.reader?.chapterData?.bookId || undefined;
+  }
+
+  private index?: {
+    entries: IndexEntry[];
+    // Names and authors as compared, worked out once per download.
+    names: string[];
+    authors: string[];
+    loadedAt: number;
+  };
+
+  private async loadIndex() {
+    if (this.index && Date.now() - this.index.loadedAt < INDEX_MAX_AGE_MS) {
+      return this.index;
+    }
+    let entries: IndexEntry[] | undefined;
+    try {
+      const res = await fetchApi(INDEX_URL);
+      if (res.ok) entries = (await res.json())?.books;
+    } catch {
+      // Reported below.
+    }
+    if (!Array.isArray(entries) || !entries.length) {
+      // An older copy is better than none.
+      if (this.index) return this.index;
+      throw new Error(INDEX_HINT);
+    }
+    this.index = {
+      entries,
+      names: entries.map(entry => loose(entry[1])),
+      authors: entries.map(entry => loose(entry[2])),
+      loadedAt: Date.now(),
+    };
+    return this.index;
+  }
+
+  /**
+   * Books whose name or author contains the term, ignoring spaces and
+   * punctuation: exact names first, then names starting with it, then other
+   * names, then authors. Each group keeps the index's most-read order.
+   */
+  private matchIndex(
+    index: { entries: IndexEntry[]; names: string[]; authors: string[] },
+    term: string,
+  ) {
+    const key = loose(term);
+    if (!key) return [];
+    const groups: IndexEntry[][] = [[], [], [], []];
+    index.entries.forEach((entry, i) => {
+      const name = index.names[i];
+      const at = name.indexOf(key);
+      if (at >= 0) groups[name === key ? 0 : at === 0 ? 1 : 2].push(entry);
+      else if (index.authors[i].indexOf(key) >= 0) groups[3].push(entry);
+    });
+    return groups[0].concat(groups[1], groups[2], groups[3]);
   }
 
   resolveUrl(path: string): string {
-    return this.site + path;
+    return this.base + path;
   }
 
   filters = {

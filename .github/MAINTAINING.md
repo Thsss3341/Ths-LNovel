@@ -43,6 +43,31 @@ To build it locally:
 node scripts/linovelib-index.js .index/linovelib_tw.json
 ```
 
+## fanqie search index
+
+fanqienovel.com's search API needs a signature that only its web pages make, so the fanqie plugin
+searches a list of the site's most-read books instead. The
+[Fanqie Search Index](workflows/fanqie-index.yml) workflow builds it with
+[`scripts/fanqie-index.js`](../scripts/fanqie-index.js) from the site's library list (the 2,000
+most-read books of each main category) and force-pushes `fanqie.json` to the `index-fanqie`
+branch.
+
+- It runs daily at 20:41 UTC (04:41 Hong Kong time), and can be started by hand from the
+  **Actions** tab. A full build takes about 20 minutes.
+- On pull requests that change the script or the workflow, it only builds a small index (200
+  books per category).
+- The library list draws common characters with a scrambled font. The script reads the decoding
+  table from `plugins/chinese/fanqie.ts`, and refuses to publish when more than 1% of the books
+  still have undecoded characters: that means the site changed its font, and the plugin's tables
+  need updating too.
+- It refuses to publish a list of fewer than half the expected number of books.
+
+To build it locally (`BOOKS_PER_CATEGORY` sets the depth):
+
+```sh
+BOOKS_PER_CATEGORY=200 node scripts/fanqie-index.js .index/fanqie.json
+```
+
 ## Development
 
 Requires Node.js 22 or newer.
@@ -59,8 +84,7 @@ npm run check:plugin -- plugins/chinese/ixdzs8.ts   # live check against the sit
 `check:plugin` bundles a plugin and runs `popularNovels`, `searchNovels`, `parseNovel` and
 `parseChapter` against the real site. It can't get past Cloudflare, so it doesn't work for
 **wenku8** (Cloudflare and a login) or **novel543**; test those in the app or with requests sent
-from a browser that has passed the challenge. For **fanqie**, `searchNovels` fails because the site
-asks for a slider captcha first; the other checks pass. The live-check workflow only runs when started by
+from a browser that has passed the challenge. The live-check workflow only runs when started by
 hand.
 
 ## Adding a plugin
