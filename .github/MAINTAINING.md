@@ -49,24 +49,35 @@ fanqienovel.com's search API needs a signature that only its web pages make, so 
 searches a list of the site's most-read books instead. The
 [Fanqie Search Index](workflows/fanqie-index.yml) workflow builds it with
 [`scripts/fanqie-index.js`](../scripts/fanqie-index.js) from the site's library list (the 2,000
-most-read books of each main category) and force-pushes `fanqie.json` to the `index-fanqie`
-branch.
+most-read books of each of the 36 main categories) and force-pushes two files to the
+`index-fanqie` branch: `fanqie.json`, which the plugin downloads, and `fanqie-categories.json`,
+each category's list with the time it was read.
 
+- **It refreshes a few categories per run.** The site stops answering a client that reads too
+  fast: a GitHub runner reading 4 categories at once was cut off after about 300 pages. So each run
+  reads at most 1,200 pages (`REQUEST_BUDGET`), one at a time with a 1-second pause, which is about
+  6 categories, starting with the ones read longest ago; the other categories keep their earlier
+  lists. Every category is refreshed about once a week.
+- **It stops when the site stops answering.** After a page fails 4 times in a row, the run keeps
+  the categories it finished, drops the one it was reading, and publishes. A run that finishes no
+  category fails without publishing.
 - It runs daily at 20:41 UTC (04:41 Hong Kong time), and can be started by hand from the
-  **Actions** tab. A full build takes about 20 minutes.
-- On pull requests that change the script or the workflow, it only builds a small index (200
-  books per category).
+  **Actions** tab. A run takes about 45 minutes.
+- On pull requests that change the script or the workflow, it only reads two short categories and
+  publishes nothing.
 - The library list draws common characters with a scrambled font. The script reads the decoding
-  table from `plugins/chinese/fanqie.ts`, and refuses to publish when more than 1% of the books
-  still have undecoded characters: that means the site changed its font, and the plugin's tables
-  need updating too.
-- It refuses to publish a list of fewer than half the expected number of books.
+  table from `plugins/chinese/fanqie.ts`, and refuses to publish when more than 1% of the books it
+  read still have undecoded characters: that means the site changed its font, and the plugin's
+  tables need updating too.
 
-To build it locally (`BOOKS_PER_CATEGORY` sets the depth):
+To build the whole index locally (in about half an hour, if the site lets you read that fast):
 
 ```sh
-BOOKS_PER_CATEGORY=200 node scripts/fanqie-index.js .index/fanqie.json
+CONCURRENCY=4 REQUEST_INTERVAL_MS=300 REQUEST_BUDGET=100000 node scripts/fanqie-index.js .index
 ```
+
+The script reads and updates `.index/fanqie-categories.json`, so pushing both files of `.index` to
+`index-fanqie` gives the workflow a complete starting point.
 
 ## Development
 

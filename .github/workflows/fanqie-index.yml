@@ -24,7 +24,7 @@ jobs:
   index:
     name: Build Search Index
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 90
     steps:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -34,10 +34,22 @@ jobs:
         with:
           node-version: '24'
 
+      # The lists of the categories this run doesn't refresh come from the
+      # last published index.
+      - name: Download Earlier Lists
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p .index
+          curl -fsSL -o .index/fanqie-categories.json \
+            "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/index-fanqie/fanqie-categories.json" \
+            || rm -f .index/fanqie-categories.json
+
       - name: Build Index
         env:
+          # Pull requests only check that a few pages can be read.
           BOOKS_PER_CATEGORY: ${{ github.event_name == 'pull_request' && '200' || '' }}
-        run: node scripts/fanqie-index.js .index/fanqie.json
+          REQUEST_BUDGET: ${{ github.event_name == 'pull_request' && '30' || '' }}
+        run: node scripts/fanqie-index.js .index
 
       - name: Publish Index
         if: github.event_name != 'pull_request'
@@ -48,6 +60,6 @@ jobs:
           git init -q -b index-fanqie
           git config user.name "github-actions[bot]"
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add fanqie.json
+          git add fanqie.json fanqie-categories.json
           git commit -qm "Update fanqie search index"
           git push -qf "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" index-fanqie
