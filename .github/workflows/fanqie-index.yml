@@ -1,0 +1,53 @@
+name: Fanqie Search Index
+
+# Rebuilds the book list the fanqie plugin searches (see
+# scripts/fanqie-index.js) and publishes it to the `index-fanqie` branch.
+on:
+  schedule:
+    # Daily at 04:41 Hong Kong time.
+    - cron: '41 20 * * *'
+  workflow_dispatch:
+  # Pull requests only build a small index, to check that the site can be read.
+  pull_request:
+    paths:
+      - 'scripts/fanqie-index.js'
+      - '.github/workflows/fanqie-index.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  index:
+    name: Build Search Index
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '24'
+
+      - name: Build Index
+        env:
+          BOOKS_PER_CATEGORY: ${{ github.event_name == 'pull_request' && '200' || '' }}
+        run: node scripts/fanqie-index.js .index/fanqie.json
+
+      - name: Publish Index
+        if: github.event_name != 'pull_request'
+        working-directory: .index
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git init -q -b index-fanqie
+          git config user.name "github-actions[bot]"
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add fanqie.json
+          git commit -qm "Update fanqie search index"
+          git push -qf "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" index-fanqie

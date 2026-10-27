@@ -135,9 +135,14 @@ ByteDance's web novel platform, home to many of today's popular Chinese web nove
   them back into normal text.
 - **Browse** the 书库 by **读者** (男生/女生), **分类**, **状态**, **字数** and **排序** (最热/最新/字数),
   or the site's 阅读榜 and 新书榜 by **榜单分类**.
-- **Searching by title** needs the site's slider check (滑块验证). If it fails, open the plugin's
-  WebView, search on the site once, then try again. Searching with the book's URL or number always
-  works, e.g. `https://fanqienovel.com/page/7069948840148732967` or `7069948840148732967`.
+- **Title search covers the most-read books.** The site's own search only works on its web pages,
+  so the plugin searches a list of the 2,000 most-read books of every category (about 70,000
+  books), rebuilt daily. Search by title or author. The first search of a session downloads the
+  list (a few MB).
+- **Any other book:** tap the plugin's WebView (the globe icon), which opens the site's search
+  page. Search there, open the book, copy its link and paste it into the plugin's search. Links to
+  a book (`https://fanqienovel.com/page/7069948840148732967`) or a chapter, links shared from the
+  番茄小说 app, and book numbers (`7069948840148732967`) all open the book.
 
 > [!TIP]
 > The same title can be a different book on each site; check the author. For example,
@@ -233,9 +238,13 @@ Open the plugin's WebView and search on the site once, or search with the novel'
 The website shows this chapter only to SVIP members. Log in with an SVIP account in the plugin's
 WebView, or read it for free in the 番茄小说 app.
 
-**番茄小说: `番茄小说的搜索需要先通过滑块验证…`**<br>
-Open the plugin's WebView, search on the site once (solve the slider if asked), then try again. Or
-search with the book's URL or number.
+**番茄小说: `搜索书目中没有这本书…`**<br>
+The book isn't among the most-read books the plugin searches. Open the plugin's WebView (it opens
+the site's search page), search there, open the book, copy its link and paste it into the plugin's
+search.
+
+**番茄小说: `无法下载番茄小说的搜索书目…`**<br>
+The search list couldn't be downloaded. Try again later, or search with the book's link as above.
 
 **Adding the repository fails**<br>
 Check that the URL was pasted exactly as shown in [Install](#install).
