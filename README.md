@@ -12,6 +12,7 @@ Chinese light novel and web novel plugins for [Nekori](https://github.com/Yuneko
 | **爱下电子书** (ixdzs8) | [ixdzs8.com](https://ixdzs8.com) | Chinese web novels (起点 and others); the most titles, with category, status and length filters |
 | **全本小说网** (quanben) | [quanben.io](https://www.quanben.io) | Chinese web novels, often complete |
 | **小說543** (novel543) | [novel543.com](https://www.novel543.com) | Chinese web novels in Traditional Chinese, some further along than elsewhere |
+| **番茄小说** (fanqie) | [fanqienovel.com](https://fanqienovel.com) | Popular new Chinese web novels; rankings by category. Only the first chapters of each book without SVIP |
 
 > [!NOTE]
 > This is a personal project, maintained for my own reading. Plugins may break when a site
@@ -27,6 +28,7 @@ Chinese light novel and web novel plugins for [Nekori](https://github.com/Yuneko
   - [爱下电子书 (ixdzs8)](#爱下电子书-ixdzs8)
   - [全本小说网 (quanben)](#全本小说网-quanben)
   - [小說543 (novel543)](#小說543-novel543)
+  - [番茄小说 (fanqie)](#番茄小说-fanqie)
 - [Tracking with MyAnimeList](#tracking-with-myanimelist)
 - [Updating](#updating)
 - [Troubleshooting](#troubleshooting)
@@ -121,6 +123,22 @@ e.g. 《玄幻：我！天命大反派》 by 天命反派, to about chapter 1,49
 - **Long chapters** span several pages on the site; the plugin joins them into one.
 - Chapters the site can't show (「章節錯誤」) show an error instead of an empty page.
 
+### 番茄小说 (fanqie)
+
+ByteDance's web novel platform, home to many of today's popular Chinese web novels.
+
+- **Only the first chapters without SVIP.** 番茄小说 is free in its own app, but its website shows
+  the full text of only the first chapters of each book (usually 10); the rest need a 番茄 SVIP
+  membership. Those chapters show an error instead of being saved cut short. If you have SVIP, log
+  in in the plugin's WebView to read them.
+- **Readable text.** The website draws common characters with a scrambled font; the plugin turns
+  them back into normal text.
+- **Browse** the 书库 by **读者** (男生/女生), **分类**, **状态**, **字数** and **排序** (最热/最新/字数),
+  or the site's 阅读榜 and 新书榜 by **榜单分类**.
+- **Searching by title** needs the site's slider check (滑块验证). If it fails, open the plugin's
+  WebView, search on the site once, then try again. Searching with the book's URL or number always
+  works, e.g. `https://fanqienovel.com/page/7069948840148732967` or `7069948840148732967`.
+
 > [!TIP]
 > The same title can be a different book on each site; check the author. For example,
 > 「玄幻：我！天命大反派」 on 全本小说网 is by 罗昼, while 爱下电子书 and 小說543 have the one by 天命反派.
@@ -210,6 +228,14 @@ The site can't show this chapter at the moment. Try again later, or read it on a
 
 **小說543: title search fails with the Cloudflare message**<br>
 Open the plugin's WebView and search on the site once, or search with the novel's URL or ID.
+
+**番茄小说: `番茄小说网页版只免费提供前几章…`**<br>
+The website shows this chapter only to SVIP members. Log in with an SVIP account in the plugin's
+WebView, or read it for free in the 番茄小说 app.
+
+**番茄小说: `番茄小说的搜索需要先通过滑块验证…`**<br>
+Open the plugin's WebView, search on the site once (solve the slider if asked), then try again. Or
+search with the book's URL or number.
 
 **Adding the repository fails**<br>
 Check that the URL was pasted exactly as shown in [Install](#install).

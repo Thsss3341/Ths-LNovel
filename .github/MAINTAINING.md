@@ -59,7 +59,8 @@ npm run check:plugin -- plugins/chinese/ixdzs8.ts   # live check against the sit
 `check:plugin` bundles a plugin and runs `popularNovels`, `searchNovels`, `parseNovel` and
 `parseChapter` against the real site. It can't get past Cloudflare, so it doesn't work for
 **wenku8** (Cloudflare and a login) or **novel543**; test those in the app or with requests sent
-from a browser that has passed the challenge. The live-check workflow only runs when started by
+from a browser that has passed the challenge. For **fanqie**, `searchNovels` fails because the site
+asks for a slider captcha first; the other checks pass. The live-check workflow only runs when started by
 hand.
 
 ## Adding a plugin
