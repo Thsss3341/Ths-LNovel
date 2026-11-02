@@ -13,6 +13,11 @@ const CHALLENGE_HINT =
 const LOGIN_HINT = '需要登录：请在 WebView 中登录轻小说文库后重试。';
 const ACCESS_HINT = '无法读取该页面：请在 WebView 中打开轻小说文库检查。';
 const BOOKCASE = 'bookcase.php';
+// The 我的书架 filter's "off" value, and the storage key of the filters last
+// used, which tells which of 分类 and 我的书架 was changed last.
+const SHELF_OFF = 'off';
+const LAST_FILTERS_KEY = 'lastListFilters';
+type ListChoice = { list: string; shelf: string; useShelf: boolean };
 // The page wenku8 redirects to when the session isn't logged in.
 const LOGIN_PAGE_MARK = 'name="password"';
 // Used when a 429 carries no Retry-After header.
@@ -577,7 +582,7 @@ class Wenku8Plugin implements Plugin.PluginBase {
   name = '轻小说文库';
   icon = 'src/cn/wenku8/icon.png';
   site = 'https://www.wenku8.net';
-  version = '1.4.0';
+  version = '1.5.0';
 
   imageRequestInit: Plugin.ImageRequestInit = {
     headers: { Referer: 'https://www.wenku8.net/' },
@@ -740,17 +745,25 @@ class Wenku8Plugin implements Plugin.PluginBase {
       filters,
     }: Plugin.PopularNovelsOptions<typeof this.filters>,
   ): Promise<Plugin.NovelItem[]> {
-    const list = showLatestNovels
-      ? 'toplist.php?sort=lastupdate'
-      : filters.list.value;
-    if (list === BOOKCASE) {
+    if (showLatestNovels) {
+      return this.parseNovelList(
+        await this.fetchPage(
+          `${this.site}/modules/article/toplist.php?sort=lastupdate&page=${pageNo}`,
+        ),
+        pageNo,
+      );
+    }
+    const { list, shelf, useShelf } = this.chooseList(
+      filters.list.value,
+      filters.shelf.value,
+    );
+    if (useShelf) {
       // A whole bookshelf group is on one page.
       if (pageNo > 1) return [];
-      const group = filters.shelf.value;
       return this.parseBookcase(
         await this.fetchPage(
           `${this.site}/modules/article/${BOOKCASE}` +
-            (group ? `?classid=${group}` : ''),
+            (shelf === SHELF_OFF || shelf === '' ? '' : `?classid=${shelf}`),
         ),
       );
     }
@@ -759,6 +772,39 @@ class Wenku8Plugin implements Plugin.PluginBase {
       `${this.site}/modules/article/${list}${separator}page=${pageNo}`,
     );
     return this.parseNovelList($, pageNo);
+  }
+
+  /**
+   * Whether to show a 分类 list or a bookshelf group. The app shows both
+   * filters at once, so the one changed last wins; 不看书架 always shows the
+   * 分类 list.
+   */
+  private chooseList(list: string, shelf: string): ListChoice {
+    let last: ListChoice | undefined;
+    try {
+      const saved: unknown = storage.get(LAST_FILTERS_KEY);
+      if (saved && typeof saved === 'object') last = saved as ListChoice;
+    } catch {
+      // Treated as a first use.
+    }
+    let useShelf: boolean;
+    if (list === BOOKCASE) {
+      // 我的书架 used to be one of the 分类 options.
+      useShelf = true;
+    } else if (shelf === SHELF_OFF) {
+      useShelf = false;
+    } else if (!last) {
+      useShelf = true;
+    } else if (shelf !== last.shelf) {
+      useShelf = true;
+    } else if (list !== last.list) {
+      useShelf = false;
+    } else {
+      useShelf = last.useShelf;
+    }
+    const choice = { list, shelf, useShelf };
+    storage.set(LAST_FILTERS_KEY, choice);
+    return choice;
   }
 
   /**
@@ -1009,16 +1055,16 @@ class Wenku8Plugin implements Plugin.PluginBase {
         { label: '日推荐榜', value: 'toplist.php?sort=dayvote' },
         { label: '总收藏榜', value: 'toplist.php?sort=goodnum' },
         { label: '字数排行', value: 'toplist.php?sort=size' },
-        // The logged-in account's bookshelf.
-        { label: '我的书架', value: BOOKCASE },
       ],
       type: FilterTypes.Picker,
     },
-    // The site's 选择分组 menu; applies to 我的书架.
+    // The logged-in account's bookshelf, by the site's 选择分组 groups.
+    // Whichever of 分类 and 我的书架 was changed last is shown.
     shelf: {
-      label: '书架分组（我的书架）',
-      value: '',
+      label: '我的书架',
+      value: SHELF_OFF,
       options: [
+        { label: '不看书架（显示分类）', value: SHELF_OFF },
         { label: '默认书架', value: '' },
         { label: '第1组书架', value: '1' },
         { label: '第2组书架', value: '2' },
