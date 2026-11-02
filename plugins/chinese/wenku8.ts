@@ -12,6 +12,7 @@ const CHALLENGE_HINT =
   'Cloudflare 验证已过期：请在 WebView 中打开轻小说文库（通常会自动通过验证），返回后重试。';
 const LOGIN_HINT = '需要登录：请在 WebView 中登录轻小说文库后重试。';
 const ACCESS_HINT = '无法读取该页面：请在 WebView 中打开轻小说文库检查。';
+const BOOKCASE = 'bookcase.php';
 // The page wenku8 redirects to when the session isn't logged in.
 const LOGIN_PAGE_MARK = 'name="password"';
 // Used when a 429 carries no Retry-After header.
@@ -576,7 +577,7 @@ class Wenku8Plugin implements Plugin.PluginBase {
   name = '轻小说文库';
   icon = 'src/cn/wenku8/icon.png';
   site = 'https://www.wenku8.net';
-  version = '1.2.1';
+  version = '1.3.0';
 
   imageRequestInit: Plugin.ImageRequestInit = {
     headers: { Referer: 'https://www.wenku8.net/' },
@@ -742,11 +743,45 @@ class Wenku8Plugin implements Plugin.PluginBase {
     const list = showLatestNovels
       ? 'toplist.php?sort=lastupdate'
       : filters.list.value;
+    if (list === BOOKCASE) {
+      // The whole shelf is on one page.
+      if (pageNo > 1) return [];
+      return this.parseBookcase(
+        await this.fetchPage(`${this.site}/modules/article/${BOOKCASE}`),
+      );
+    }
     const separator = list.includes('?') ? '&' : '?';
     const $ = await this.fetchPage(
       `${this.site}/modules/article/${list}${separator}page=${pageNo}`,
     );
     return this.parseNovelList($, pageNo);
+  }
+
+  /**
+   * The account's bookshelf. Each row links the title to
+   * readbookcase.php?aid=<novel>&bid=<shelf entry>, and the latest chapter
+   * and bookmark to the same page with a cid as well.
+   */
+  private parseBookcase($: CheerioAPI): Plugin.NovelItem[] {
+    const novels: Plugin.NovelItem[] = [];
+    const seen = new Set<string>();
+    $('a[href]').each((_, el) => {
+      const href = $(el).attr('href') || '';
+      const aid =
+        (/[?&]cid=/.test(href)
+          ? undefined
+          : href.match(/[?&]aid=(\d+)/)?.[1]) ||
+        href.match(/\/book\/(\d+)\.htm/)?.[1];
+      const name = $(el).text().trim();
+      if (!aid || !name || seen.has(aid)) return;
+      seen.add(aid);
+      novels.push({
+        name,
+        path: `/book/${aid}.htm`,
+        cover: this.coverUrl(aid),
+      });
+    });
+    return novels;
   }
 
   async parseNovel(novelPath: string): Promise<Plugin.SourceNovel> {
@@ -970,6 +1005,8 @@ class Wenku8Plugin implements Plugin.PluginBase {
         { label: '日推荐榜', value: 'toplist.php?sort=dayvote' },
         { label: '总收藏榜', value: 'toplist.php?sort=goodnum' },
         { label: '字数排行', value: 'toplist.php?sort=size' },
+        // The logged-in account's bookshelf.
+        { label: '我的书架', value: BOOKCASE },
       ],
       type: FilterTypes.Picker,
     },

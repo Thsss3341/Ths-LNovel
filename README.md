@@ -64,6 +64,8 @@ Japanese light novels translated into Simplified Chinese.
   to wenku8 there. The plugin reuses that login.
 - **Browse** the site's tabs and rankings: 热门轻小说, 动画化作品, 今日更新, 新书一览, **完结全本**,
   轻小说列表, and the 排行榜, 推荐榜, 总收藏榜 and 字数排行 rankings.
+- **Your wenku8 bookshelf:** choose **我的书架** in the filter to list the novels on the bookshelf of
+  the account you're logged in with.
 - **Chapters by volume (卷)**, with illustrations.
 - **Search in Simplified Chinese** (e.g. 无职转生); the site's titles are simplified. wenku8 allows
   one search every 5 seconds.
