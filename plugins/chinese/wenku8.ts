@@ -577,7 +577,7 @@ class Wenku8Plugin implements Plugin.PluginBase {
   name = '轻小说文库';
   icon = 'src/cn/wenku8/icon.png';
   site = 'https://www.wenku8.net';
-  version = '1.3.0';
+  version = '1.4.0';
 
   imageRequestInit: Plugin.ImageRequestInit = {
     headers: { Referer: 'https://www.wenku8.net/' },
@@ -744,10 +744,14 @@ class Wenku8Plugin implements Plugin.PluginBase {
       ? 'toplist.php?sort=lastupdate'
       : filters.list.value;
     if (list === BOOKCASE) {
-      // The whole shelf is on one page.
+      // A whole bookshelf group is on one page.
       if (pageNo > 1) return [];
+      const group = filters.shelf.value;
       return this.parseBookcase(
-        await this.fetchPage(`${this.site}/modules/article/${BOOKCASE}`),
+        await this.fetchPage(
+          `${this.site}/modules/article/${BOOKCASE}` +
+            (group ? `?classid=${group}` : ''),
+        ),
       );
     }
     const separator = list.includes('?') ? '&' : '?';
@@ -1007,6 +1011,20 @@ class Wenku8Plugin implements Plugin.PluginBase {
         { label: '字数排行', value: 'toplist.php?sort=size' },
         // The logged-in account's bookshelf.
         { label: '我的书架', value: BOOKCASE },
+      ],
+      type: FilterTypes.Picker,
+    },
+    // The site's 选择分组 menu; applies to 我的书架.
+    shelf: {
+      label: '书架分组（我的书架）',
+      value: '',
+      options: [
+        { label: '默认书架', value: '' },
+        { label: '第1组书架', value: '1' },
+        { label: '第2组书架', value: '2' },
+        { label: '第3组书架', value: '3' },
+        { label: '第4组书架', value: '4' },
+        { label: '第5组书架', value: '5' },
       ],
       type: FilterTypes.Picker,
     },
