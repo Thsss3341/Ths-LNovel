@@ -14,6 +14,13 @@ const CHALLENGE_HINT =
 const TRUNCATED_MARK = '內容加載失敗';
 const TRUNCATED_HINT =
   '嗶哩輕小說只回傳了部分章節內容：請在 WebView 中打開網站首頁，返回後重試。';
+// A locked chapter: the site shows this note instead of the text. In some
+// regions a chapter is unlocked for a while by watching an ad in the browser;
+// the plugin reuses the WebView's cookies, so unlocked chapters download.
+// Withdrawn novels (「已下架」) show it too.
+const BLOCKED_MARK = '沒有可閱讀的章節';
+const BLOCKED_HINT =
+  '這一章被嗶哩輕小說鎖住了（「沒有可閱讀的章節」）：請在 WebView 中打開這一章，按網站提示解鎖（例如觀看廣告）後返回重試。已下架的小說可能無法解鎖。';
 const INDEX_HINT =
   '無法下載搜尋索引，請稍後再試，或輸入小說網址或編號，例如 https://tw.linovelib.com/novel/3095.html 或 3095。';
 
@@ -588,7 +595,7 @@ class LinovelibTwPlugin implements Plugin.PluginBase {
   name = '嗶哩輕小說(繁體)';
   icon = 'src/cn/linovelib_tw_ths/icon.png';
   site = 'https://tw.linovelib.com';
-  version = '1.2.0';
+  version = '1.2.1';
 
   // Illustrations on img3.readpai.com answer 403 without a linovelib Referer.
   imageRequestInit: Plugin.ImageRequestInit = {
@@ -739,9 +746,16 @@ class LinovelibTwPlugin implements Plugin.PluginBase {
       }
     }
 
-    const catalogPath =
-      $('#btnReadBook').attr('href') ||
-      novelPath.replace(/\.html$/, '/catalog');
+    // A withdrawn novel's 「已下架」 button links nowhere, but the site still
+    // lists its chapters; its notice goes at the top of the description.
+    const notice = $('aside.notice .notice-body').text().trim();
+    if (notice.includes('版權')) {
+      novel.summary = '⚠ ' + notice + '\n\n' + novel.summary;
+    }
+    const readLink = $('#btnReadBook').attr('href') || '';
+    const catalogPath = /^\/novel\//.test(readLink)
+      ? readLink
+      : novelPath.replace(/\.html$/, '/catalog');
     novel.chapters = this.parseChapterList(await this.fetchPage(catalogPath));
     return novel;
   }
@@ -867,9 +881,9 @@ class LinovelibTwPlugin implements Plugin.PluginBase {
     let html = '';
     for (let i = 0; page && i < MAX_CHAPTER_PAGES; i++) {
       const $ = await this.fetchPage(page);
-      if ($('#acontent').text().includes(TRUNCATED_MARK)) {
-        throw new Error(TRUNCATED_HINT);
-      }
+      const text = $('#acontent').text();
+      if (text.includes(TRUNCATED_MARK)) throw new Error(TRUNCATED_HINT);
+      if (text.includes(BLOCKED_MARK)) throw new Error(BLOCKED_HINT);
       const params = this.readParams($);
       html += this.pageContent($, params.chapterId);
       page = this.nextPageOf(params);
