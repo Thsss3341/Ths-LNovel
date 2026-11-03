@@ -220,6 +220,11 @@ wenku8 withdrew this novel for copyright reasons; it has no chapters.
 The site sent a shortened chapter, which it does for visitors it takes for bots. Open the site's
 home page in the plugin's WebView, then try again.
 
+**嗶哩輕小說: `嗶哩輕小說沒有提供這一章的內容（「沒有可閱讀的章節」）…`**<br>
+The site no longer serves this chapter, usually because the novel was withdrawn at the copyright
+holder's request; its description then starts with the site's notice (⚠ …版權方的要求…). Chapters
+of a withdrawn novel can't be downloaded. Chapters you downloaded earlier stay readable.
+
 **嗶哩輕小說: `無法下載搜尋索引…`**<br>
 The search list couldn't be downloaded. Try again later, or search with the novel's URL or number.
 
