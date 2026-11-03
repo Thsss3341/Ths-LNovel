@@ -14,11 +14,13 @@ const CHALLENGE_HINT =
 const TRUNCATED_MARK = '內容加載失敗';
 const TRUNCATED_HINT =
   '嗶哩輕小說只回傳了部分章節內容：請在 WebView 中打開網站首頁，返回後重試。';
-// A chapter the site no longer serves, e.g. of a novel withdrawn at the
-// copyright holder's request (「已下架」).
+// A locked chapter: the site shows this note instead of the text. In some
+// regions a chapter is unlocked for a while by watching an ad in the browser;
+// the plugin reuses the WebView's cookies, so unlocked chapters download.
+// Withdrawn novels (「已下架」) show it too.
 const BLOCKED_MARK = '沒有可閱讀的章節';
 const BLOCKED_HINT =
-  '嗶哩輕小說沒有提供這一章的內容（「沒有可閱讀的章節」），通常是因為小說已應版權方要求下架。';
+  '這一章被嗶哩輕小說鎖住了（「沒有可閱讀的章節」）：請在 WebView 中打開這一章，按網站提示解鎖（例如觀看廣告）後返回重試。已下架的小說可能無法解鎖。';
 const INDEX_HINT =
   '無法下載搜尋索引，請稍後再試，或輸入小說網址或編號，例如 https://tw.linovelib.com/novel/3095.html 或 3095。';
 
