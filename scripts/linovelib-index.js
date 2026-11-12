@@ -37,6 +37,11 @@ const decode = text =>
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+// The site refuses some clients outright (HTTP 403 or a Cloudflare
+// challenge), often only for a day. That isn't a fault to report: the run
+// keeps the published index and tries again tomorrow.
+class BlockedError extends Error {}
+
 let lastRequest = 0;
 async function fetchPage(url) {
   for (let attempt = 1; ; attempt++) {
@@ -46,12 +51,16 @@ async function fetchPage(url) {
     try {
       const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
       if (res.headers.get('cf-mitigated') === 'challenge') {
-        throw new Error('Cloudflare challenge');
+        throw new BlockedError('Cloudflare challenge');
       }
+      if (res.status === 403) throw new BlockedError('HTTP 403');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.text();
     } catch (error) {
-      if (attempt >= RETRIES) throw new Error(`${url}: ${error.message}`);
+      if (attempt >= RETRIES) {
+        const Failure = error instanceof BlockedError ? BlockedError : Error;
+        throw new Failure(`${url}: ${error.message}`);
+      }
       await sleep(5000 * attempt);
     }
   }
@@ -87,7 +96,18 @@ async function readList(site) {
   return novels;
 }
 
-const traditional = await readList('https://tw.linovelib.com');
+let traditional;
+try {
+  traditional = await readList('https://tw.linovelib.com');
+} catch (error) {
+  if (!(error instanceof BlockedError)) throw error;
+  // A warning annotation on the run, which still succeeds without writing
+  // the index, so the workflow publishes nothing.
+  console.log(
+    `::warning::tw.linovelib.com refused the requests (${error.message}); keeping the published index.`,
+  );
+  process.exit(0);
+}
 if (traditional.size < MIN_NOVELS) {
   throw new Error(`Only ${traditional.size} novels found; not publishing.`);
 }

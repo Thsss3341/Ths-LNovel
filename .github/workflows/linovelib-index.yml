@@ -37,8 +37,9 @@ jobs:
       - name: Build Index
         run: node scripts/linovelib-index.js .index/linovelib_tw.json
 
+      # Skipped when the site refused the requests and no index was written.
       - name: Publish Index
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && hashFiles('.index/linovelib_tw.json') != ''
         working-directory: .index
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
