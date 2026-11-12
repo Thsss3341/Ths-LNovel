@@ -30,6 +30,11 @@ const INDEX_HINT =
 const INDEX_URL =
   'https://raw.githubusercontent.com/Thsss3341/Ths-LNovel/index/linovelib_tw.json';
 const INDEX_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+// The workflow publishes daily, but the site sometimes blocks it. When the
+// list is older than this, the plugin adds the novels on the first pages of
+// the site's 最新入庫 list, newest first, that the list doesn't have yet.
+const INDEX_STALE_MS = 30 * 60 * 60 * 1000;
+const NEWEST_PAGES = 5;
 const SEARCH_PAGE_SIZE = 40;
 /** [id, Traditional title, simplified title ('' if the same), author] */
 type IndexEntry = [number, string, string, string];
@@ -595,7 +600,7 @@ class LinovelibTwPlugin implements Plugin.PluginBase {
   name = '嗶哩輕小說(繁體)';
   icon = 'src/cn/linovelib_tw_ths/icon.png';
   site = 'https://tw.linovelib.com';
-  version = '1.2.1';
+  version = '1.3.0';
 
   // Illustrations on img3.readpai.com answer 403 without a linovelib Referer.
   imageRequestInit: Plugin.ImageRequestInit = {
@@ -946,9 +951,14 @@ class LinovelibTwPlugin implements Plugin.PluginBase {
       return this.index.entries;
     }
     let entries: IndexEntry[] | undefined;
+    let updated = 0;
     try {
       const res = await fetchApi(INDEX_URL);
-      if (res.ok) entries = (await res.json())?.novels;
+      if (res.ok) {
+        const index = await res.json();
+        entries = index?.novels;
+        updated = Date.parse(index?.updated) || 0;
+      }
     } catch {
       // Reported below.
     }
@@ -957,8 +967,43 @@ class LinovelibTwPlugin implements Plugin.PluginBase {
       if (this.index) return this.index.entries;
       throw new Error(INDEX_HINT);
     }
+    if (Date.now() - updated > INDEX_STALE_MS) {
+      entries = entries.concat(await this.newestNovels(entries));
+    }
     this.index = { entries, loadedAt: Date.now() };
     return entries;
+  }
+
+  /**
+   * Novels on the site's 最新入庫 list that `known` doesn't have, read until
+   * a page reaches novels it has. Only titles are known; a failure (e.g. an
+   * expired Cloudflare check) just leaves them out.
+   */
+  private async newestNovels(known: IndexEntry[]): Promise<IndexEntry[]> {
+    const ids = new Set(known.map(entry => entry[0]));
+    const added: IndexEntry[] = [];
+    try {
+      for (let page = 1; page <= NEWEST_PAGES; page++) {
+        const novels = this.parseNovelList(
+          await this.fetchPage(`/wenku/postdate_0_0_0_0_0_0_0_${page}_0.html`),
+        );
+        let reachedKnown = !novels.length;
+        novels.forEach(novel => {
+          const id = Number(novel.path.match(/\/novel\/(\d+)\.html$/)?.[1]);
+          if (!id) return;
+          if (ids.has(id)) {
+            reachedKnown = true;
+            return;
+          }
+          ids.add(id);
+          added.push([id, novel.name, '', '']);
+        });
+        if (reachedKnown) break;
+      }
+    } catch {
+      // Search the published list alone.
+    }
+    return added;
   }
 
   /**

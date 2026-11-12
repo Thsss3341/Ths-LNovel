@@ -34,6 +34,12 @@ force-pushes `linovelib_tw.json` to the `index` branch.
 - On pull requests that change the script or the workflow, it only builds the index, to check that
   GitHub's runners can still read both sites.
 - It refuses to publish a list of fewer than 1,000 novels.
+- When tw.linovelib.com refuses the requests (HTTP 403 or a Cloudflare challenge, which has
+  happened for a day at a time), the run succeeds with a warning and publishes nothing, so the
+  previous index stays. Other errors still fail the run.
+- When the index is more than 30 hours old, the plugin adds the novels on the first pages of the
+  site's 最新入庫 list that the index doesn't have, read in the app with the WebView's Cloudflare
+  pass.
 - GitHub turns off scheduled workflows after 60 days without activity in the repository. If that
   happens, re-enable the workflow in the **Actions** tab.
 

@@ -87,7 +87,8 @@ Light novels in Traditional Chinese.
   every novel that is rebuilt daily. Search in Traditional or Simplified Chinese, or by author:
   `史莱姆` and `史萊姆` both find 關於我轉生變成史萊姆這檔事. A novel's URL or number (e.g.
   `https://tw.linovelib.com/novel/3095.html` or `3095`) opens it directly, including novels added
-  since the last rebuild.
+  since the last rebuild. If the list hasn't been rebuilt for over a day (the site sometimes
+  blocks the rebuild), the plugin adds the newest novels from the site's 最新入庫 list itself.
 - **Browse** the rankings, **完結全本**, or filter the full list by **狀態** (e.g. 已經完本),
   **動畫化**, **類型** and **字數**, sorted by the chosen ranking.
 - **Finds hidden chapters.** Some chapters have no link in the table of contents; the plugin
