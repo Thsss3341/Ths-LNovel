@@ -600,7 +600,7 @@ class LinovelibTwPlugin implements Plugin.PluginBase {
   name = '嗶哩輕小說(繁體)';
   icon = 'src/cn/linovelib_tw_ths/icon.png';
   site = 'https://tw.linovelib.com';
-  version = '1.3.0';
+  version = '1.3.1';
 
   // Illustrations on img3.readpai.com answer 403 without a linovelib Referer.
   imageRequestInit: Plugin.ImageRequestInit = {
@@ -861,6 +861,20 @@ class LinovelibTwPlugin implements Plugin.PluginBase {
       if (src) img.attr('src', src.replace(/^\/\//, 'https://'));
       img.removeAttr('data-src').removeClass('lazyload');
     });
+
+    // A stray tag outside a paragraph (e.g. "<b>＋</p>") makes the HTML parser
+    // nest every following <p> inside it, and the site's chapterlog.js, which
+    // only reorders direct children, then counts too few and scrambles the
+    // page. The server shuffled all of them, so unwrap them first.
+    for (let unwrapped = true; unwrapped; ) {
+      unwrapped = false;
+      content.children().each((_, el) => {
+        const wrapper = $(el);
+        if (wrapper.is('p, div, script') || !wrapper.find('p').length) return;
+        wrapper.replaceWith(wrapper.contents());
+        unwrapped = true;
+      });
+    }
 
     // Mirrors chapterlog.js: only non-empty <p> children take part.
     const nodes = content.contents().toArray();
